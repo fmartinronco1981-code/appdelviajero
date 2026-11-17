@@ -1,0 +1,2434 @@
+<!DOCTYPE html>
+<html lang="es" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>La App del Viajero — Globo 3D & Diario Local</title>
+
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', 'system-ui', 'sans-serif'],
+          },
+          colors: {
+            space: {
+              950: '#040711',
+              900: '#090e1f',
+              800: '#111831',
+              700: '#1a2447',
+            },
+            accent: {
+              400: '#38bdf8',
+              500: '#0ea5e9',
+              600: '#0284c7',
+            }
+          }
+        }
+      }
+    };
+  </script>
+
+  <!-- Google Fonts: Inter -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+
+  <!-- FontAwesome Icons -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css" />
+
+  <!-- Three.js & Globe.gl (Motor 3D gratuito sin API Keys) -->
+  <script src="https://unpkg.com/three@0.160.0/build/three.min.js"></script>
+  <script src="https://unpkg.com/globe.gl@2.32.1/dist/globe.gl.min.js"></script>
+
+  <!-- Leaflet CSS & JS (Para nivel calle/monumento de alta definición) -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
+  <!-- EXIFR para lectura rápida y moderna de metadatos GPS EXIF en fotos locales -->
+  <script src="https://cdn.jsdelivr.net/npm/exifr@7.1.3/dist/lite.umd.js"></script>
+
+  <style>
+    * {
+      box-sizing: border-box;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    html, body {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background-color: #040711;
+      color: #f8fafc;
+      font-family: 'Inter', sans-serif;
+    }
+
+    /* Scrollbars limpios */
+    ::-webkit-scrollbar {
+      width: 6px;
+      height: 6px;
+    }
+    ::-webkit-scrollbar-track {
+      background: rgba(15, 23, 42, 0.4);
+    }
+    ::-webkit-scrollbar-thumb {
+      background: rgba(56, 189, 248, 0.35);
+      border-radius: 9999px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: rgba(56, 189, 248, 0.65);
+    }
+
+    /* Glassmorphism oscuro espacial */
+    .glass-panel {
+      background: rgba(9, 14, 31, 0.78);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border: 1px solid rgba(148, 163, 184, 0.16);
+      box-shadow: 0 20px 45px -15px rgba(0, 0, 0, 0.75);
+    }
+
+    .glass-pill {
+      background: rgba(17, 24, 49, 0.85);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border: 1px solid rgba(56, 189, 248, 0.28);
+    }
+
+    /* Marcadores HTML 3D en el globo */
+    .globe-pin-wrapper {
+      transform: translate(-50%, -100%);
+      cursor: pointer;
+      pointer-events: auto;
+      user-select: none;
+      transition: transform 0.22s cubic-bezier(0.34, 1.56, 0.64, 1);
+      z-index: 10;
+    }
+    .globe-pin-wrapper:hover {
+      transform: translate(-50%, -108%) scale(1.08);
+      z-index: 50;
+    }
+
+    .pin-bubble {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      padding: 4px 11px 4px 5px;
+      border-radius: 9999px;
+      background: rgba(9, 14, 31, 0.94);
+      border: 1.5px solid #38bdf8;
+      box-shadow: 0 8px 22px rgba(0, 0, 0, 0.72), 0 0 14px rgba(56, 189, 248, 0.38);
+      white-space: nowrap;
+    }
+
+    .pin-bubble.sub-place {
+      border-color: #f59e0b;
+      box-shadow: 0 8px 22px rgba(0, 0, 0, 0.72), 0 0 14px rgba(245, 158, 11, 0.38);
+    }
+
+    .pin-stem {
+      width: 2px;
+      height: 12px;
+      margin: 0 auto;
+      background: linear-gradient(to bottom, #38bdf8, transparent);
+    }
+    .pin-stem.sub-place {
+      background: linear-gradient(to bottom, #f59e0b, transparent);
+    }
+
+    .pin-dot {
+      width: 7px;
+      height: 7px;
+      margin: -2px auto 0;
+      border-radius: 50%;
+      background: #38bdf8;
+      box-shadow: 0 0 10px #38bdf8;
+    }
+    .pin-dot.sub-place {
+      background: #f59e0b;
+      box-shadow: 0 0 10px #f59e0b;
+    }
+
+    /* Superposición nativa fiable en móviles para inputs de archivo */
+    .native-file-overlay {
+      position: relative;
+      overflow: hidden;
+    }
+    .native-file-overlay input[type="file"] {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      opacity: 0;
+      cursor: pointer;
+      z-index: 10;
+      font-size: 100px;
+    }
+
+    /* Leaflet Custom Dark UI */
+    #street-map-wrapper {
+      transition: opacity 0.45s cubic-bezier(0.22, 1, 0.36, 1);
+    }
+    .leaflet-container {
+      background: #040711 !important;
+      font-family: 'Inter', sans-serif !important;
+    }
+    .leaflet-control-attribution {
+      background: rgba(9, 14, 31, 0.7) !important;
+      color: #94a3b8 !important;
+      font-size: 10px !important;
+      border-top-left-radius: 8px;
+    }
+    .leaflet-control-attribution a {
+      color: #38bdf8 !important;
+    }
+
+    /* Animaciones suaves */
+    @keyframes pulse-ring {
+      0% { transform: scale(0.85); opacity: 0.9; }
+      70% { transform: scale(1.6); opacity: 0; }
+      100% { transform: scale(1.6); opacity: 0; }
+    }
+    .orbit-indicator-dot::after {
+      content: '';
+      position: absolute;
+      inset: -3px;
+      border-radius: 9999px;
+      border: 1.5px solid currentColor;
+      animation: pulse-ring 2s infinite;
+    }
+  </style>
+</head>
+<body class="select-none">
+
+  <!-- CAPA 1: GLOBO TERRÁQUEO 3D INTERACTIVO -->
+  <div id="globe-container" class="fixed inset-0 w-full h-full z-0"></div>
+
+  <!-- CAPA 2: MAPA DETALLADO NIVEL CALLE / SATÉLITE (Se activa al hacer zoom profundo o pulsar "Vista Calle") -->
+  <div id="street-map-wrapper" class="fixed inset-0 w-full h-full z-10 hidden opacity-0">
+    <div id="street-map-container" class="w-full h-full"></div>
+  </div>
+
+  <!-- CABECERA FLOTANTE SUPERIOR -->
+  <header class="fixed top-0 left-0 right-0 z-30 pointer-events-none p-3 sm:p-5 flex flex-wrap items-center justify-between gap-3">
+    <!-- Marca y Perfil Principal -->
+    <div class="glass-panel pointer-events-auto rounded-2xl px-3.5 py-2.5 flex items-center gap-3">
+      <button id="btn-profile-edit" title="Gestionar viajeros y avatares" class="relative group flex items-center justify-center w-11 h-11 rounded-full bg-gradient-to-tr from-sky-500 to-indigo-500 p-0.5 shadow-lg shadow-sky-500/25 active:scale-95 transition">
+        <div id="user-avatar-display" class="w-full h-full rounded-full bg-space-900 flex items-center justify-center text-sm overflow-hidden font-bold text-sky-400">
+          FR
+        </div>
+        <span class="absolute -bottom-0.5 -right-0.5 w-4 h-4 rounded-full bg-sky-500 text-[9px] text-white flex items-center justify-center border border-space-950">
+          <i class="fa-solid fa-camera"></i>
+        </span>
+      </button>
+      <div>
+        <div class="flex items-center gap-2">
+          <h1 class="text-sm sm:text-base font-bold tracking-tight text-white">La App del Viajero</h1>
+          <span class="hidden sm:inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium bg-emerald-500/15 text-emerald-400 border border-emerald-500/30">
+            <i class="fa-solid fa-shield-halved mr-1"></i> 100% Local
+          </span>
+        </div>
+        <p id="header-stats" class="text-[11px] sm:text-xs text-slate-400">Cargando bitácora...</p>
+      </div>
+    </div>
+
+    <!-- Indicador de Estado Órbita + Controles Rápidos -->
+    <div class="flex items-center gap-2 pointer-events-auto">
+      <!-- Estado Órbita / Fijo -->
+      <div id="orbit-status-pill" class="glass-pill rounded-full px-3 py-2 flex items-center gap-2 text-xs font-medium text-sky-300 shadow-lg">
+        <span id="orbit-dot" class="relative w-2 h-2 rounded-full bg-sky-400 text-sky-400 orbit-indicator-dot"></span>
+        <span id="orbit-label">Órbita Activa</span>
+      </div>
+
+      <!-- Alternar Vista 3D Globo / Mapa Calle HD -->
+      <button id="btn-toggle-map-mode" title="Alternar entre Globo 3D y Mapa Satélite HD" class="glass-panel hover:bg-space-800 active:scale-95 transition rounded-2xl px-3.5 py-2.5 text-xs font-medium text-slate-200 flex items-center gap-2">
+        <i id="map-mode-icon" class="fa-solid fa-map-location-dot text-sky-400"></i>
+        <span id="map-mode-text" class="hidden md:inline">Mapa HD</span>
+      </button>
+
+      <!-- Volver a Vista Global -->
+      <button id="btn-reset-view" title="Volver a vista global del planeta" class="glass-panel hover:bg-space-800 active:scale-95 transition rounded-2xl p-2.5 sm:px-3.5 sm:py-2.5 text-xs font-medium text-slate-200 flex items-center gap-2">
+        <i class="fa-solid fa-earth-americas text-sky-400"></i>
+        <span class="hidden md:inline">Vista Global</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- BREADCRUMB DE RAMA / DESTINO ACTIVO (Cuando haces zoom a un destino con sub-lugares) -->
+  <div id="branch-banner" class="fixed top-20 left-1/2 -translate-x-1/2 z-30 hidden">
+    <div class="glass-panel rounded-full px-4 py-2 flex items-center gap-3 border border-amber-500/40 shadow-xl">
+      <span class="w-2.5 h-2.5 rounded-full bg-amber-400 animate-pulse"></span>
+      <span id="branch-banner-title" class="text-xs sm:text-sm font-semibold text-white">Explorando París</span>
+      <span class="text-[11px] text-amber-300 hidden sm:inline">• Toca un sub-lugar para abrir su álbum</span>
+      <button id="btn-close-branch" class="ml-1 text-xs bg-slate-800 hover:bg-slate-700 text-slate-300 px-2.5 py-1 rounded-full transition">
+        <i class="fa-solid fa-arrow-up mr-1"></i>Subir
+      </button>
+    </div>
+  </div>
+
+  <!-- BARRA INFERIOR FLOTANTE DE PESTAÑAS Y ACCIONES -->
+  <nav class="fixed bottom-4 left-1/2 -translate-x-1/2 z-30 w-[95%] max-w-2xl">
+    <div class="glass-panel rounded-3xl p-1.5 sm:p-2 flex items-center justify-between gap-1 sm:gap-2 shadow-2xl">
+      <!-- Pestaña 1: Mis Viajes -->
+      <button id="btn-open-trips" class="flex-1 flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-1.5 py-2.5 px-2.5 rounded-2xl hover:bg-white/5 active:scale-95 transition text-slate-200 text-[11px] sm:text-xs font-medium">
+        <i class="fa-solid fa-route text-sky-400 text-sm"></i>
+        <span>Mis Viajes</span>
+      </button>
+
+      <!-- Pestaña 2: Personas / Avatares -->
+      <button id="btn-open-people" class="flex-1 flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-1.5 py-2.5 px-2.5 rounded-2xl hover:bg-white/5 active:scale-95 transition text-slate-200 text-[11px] sm:text-xs font-medium">
+        <i class="fa-solid fa-users text-amber-400 text-sm"></i>
+        <span>Personas</span>
+      </button>
+
+      <!-- Botón Central Destacado: + Añadir Viaje -->
+      <button id="btn-open-add" class="flex-[1.35] flex items-center justify-center gap-2 py-3 px-4 rounded-2xl bg-gradient-to-r from-sky-500 to-indigo-600 hover:from-sky-400 hover:to-indigo-500 active:scale-95 transition text-white text-xs sm:text-sm font-semibold shadow-lg shadow-sky-500/25">
+        <i class="fa-solid fa-plus"></i>
+        <span>Añadir Viaje</span>
+      </button>
+
+      <!-- Pestaña 4: GPS Aquí -->
+      <button id="btn-quick-gps" class="flex-1 flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-1.5 py-2.5 px-2.5 rounded-2xl hover:bg-white/5 active:scale-95 transition text-slate-200 text-[11px] sm:text-xs font-medium">
+        <i class="fa-solid fa-location-crosshairs text-emerald-400 text-sm"></i>
+        <span>GPS Aquí</span>
+      </button>
+    </div>
+  </nav>
+
+  <!-- MODAL 1: AÑADIR VIAJE / LUGARES / PARTICIPANTES / FOTOS MÚLTIPLES -->
+  <div id="modal-add-trip" class="fixed inset-0 z-40 hidden bg-black/75 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4">
+    <div class="glass-panel w-full max-w-2xl max-h-[92vh] rounded-t-3xl sm:rounded-3xl flex flex-col overflow-hidden border border-slate-700/70">
+      <!-- Header Modal -->
+      <div class="px-5 py-4 border-b border-slate-800 flex items-center justify-between">
+        <div class="flex items-center gap-2.5">
+          <div class="w-9 h-9 rounded-xl bg-sky-500/15 border border-sky-500/30 flex items-center justify-center text-sky-400">
+            <i class="fa-solid fa-plane-departure"></i>
+          </div>
+          <div>
+            <h2 class="text-base font-bold text-white">Nuevo Viaje o Parada</h2>
+            <p class="text-[11px] text-slate-400">Autocompletado mundial, avatares y galería múltiple</p>
+          </div>
+        </div>
+        <button data-close-modal="modal-add-trip" class="w-9 h-9 rounded-full bg-slate-800/80 hover:bg-slate-700 text-slate-300 flex items-center justify-center transition">
+          <i class="fa-solid fa-xmark"></i>
+        </button>
+      </div>
+
+      <!-- Cuerpo Scrollable -->
+      <form id="form-add-trip" class="p-5 overflow-y-auto space-y-5 select-text">
+        <!-- Nombre del Viaje y Agrupación -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div>
+            <label class="block text-xs font-medium text-slate-300 mb-1.5">Nombre del Viaje *</label>
+            <input type="text" id="input-trip-name" required placeholder="Ej. Escapada a París, Ruta en Camper..."
+              class="w-full rounded-xl bg-space-900/90 border border-slate-700 focus:border-sky-400 focus:outline-none px-3.5 py-2.5 text-sm text-white placeholder-slate-500" />
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-slate-300 mb-1.5">Destino Padre / Región (Rama)</label>
+            <input type="text" id="input-parent-region" placeholder="Ej. París, Teruel, Alpes..."
+              class="w-full rounded-xl bg-space-900/90 border border-slate-700 focus:border-sky-400 focus:outline-none px-3.5 py-2.5 text-sm text-white placeholder-slate-500" />
+            <p class="text-[10px] text-slate-400 mt-1">Agrupa varias paradas bajo un mismo nodo en el globo.</p>
+          </div>
+        </div>
+
+        <!-- Fechas -->
+        <div class="grid grid-cols-2 gap-4">
+          <div>
+            <label class="block text-xs font-medium text-slate-300 mb-1.5">Fecha Inicio</label>
+            <input type="date" id="input-date-start"
+              class="w-full rounded-xl bg-space-900/90 border border-slate-700 focus:border-sky-400 focus:outline-none px-3.5 py-2.5 text-sm text-white" />
+          </div>
+          <div>
+            <label class="block text-xs font-medium text-slate-300 mb-1.5">Fecha Fin</label>
+            <input type="date" id="input-date-end"
+              class="w-full rounded-xl bg-space-900/90 border border-slate-700 focus:border-sky-400 focus:outline-none px-3.5 py-2.5 text-sm text-white" />
+          </div>
+        </div>
+
+        <!-- Buscador de Lugar con Autocompletado Mundial + GPS -->
+        <div class="space-y-2 relative">
+          <div class="flex items-center justify-between">
+            <label class="block text-xs font-medium text-slate-300">Lugar / Ciudad / Monumento *</label>
+            <button type="button" id="btn-detect-gps-form" class="text-xs font-medium text-emerald-400 hover:text-emerald-300 flex items-center gap-1.5 bg-emerald-500/10 border border-emerald-500/30 px-2.5 py-1 rounded-lg transition">
+              <i class="fa-solid fa-location-crosshairs"></i>
+              <span>Usar mi GPS actual</span>
+            </button>
+          </div>
+
+          <div class="relative">
+            <i class="fa-solid fa-magnifying-glass absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 text-xs"></i>
+            <input type="text" id="input-place-search" required autocomplete="off"
+              placeholder="Escribe Madrid, Teruel, Torre Eiffel, París..."
+              class="w-full rounded-xl bg-space-900/90 border border-slate-700 focus:border-sky-400 focus:outline-none pl-9 pr-4 py-2.5 text-sm text-white placeholder-slate-500" />
+            <div id="place-search-spinner" class="hidden absolute right-3.5 top-1/2 -translate-y-1/2 text-sky-400 text-xs">
+              <i class="fa-solid fa-circle-notch fa-spin"></i>
+            </div>
+          </div>
+
+          <!-- Dropdown Autocompletado -->
+          <div id="autocomplete-results" class="hidden absolute left-0 right-0 z-50 mt-1 rounded-2xl bg-space-800 border border-slate-700 shadow-2xl max-h-52 overflow-y-auto divide-y divide-slate-700/60"></div>
+
+          <!-- Coordenadas detectadas -->
+          <div class="grid grid-cols-2 gap-3 pt-1">
+            <div>
+              <label class="block text-[10px] text-slate-400 mb-1">Latitud (Automática)</label>
+              <input type="number" step="any" id="input-lat" required placeholder="40.4168"
+                class="w-full rounded-xl bg-space-950/80 border border-slate-800 px-3 py-2 text-xs text-sky-300 font-mono" />
+            </div>
+            <div>
+              <label class="block text-[10px] text-slate-400 mb-1">Longitud (Automática)</label>
+              <input type="number" step="any" id="input-lng" required placeholder="-3.7038"
+                class="w-full rounded-xl bg-space-950/80 border border-slate-800 px-3 py-2 text-xs text-sky-300 font-mono" />
+            </div>
+          </div>
+        </div>
+
+        <!-- Selección Visual de Viajeros con sus Caras Reales -->
+        <div>
+          <div class="flex items-center justify-between mb-1.5">
+            <label class="block text-xs font-medium text-slate-300">¿Quiénes vais a este viaje?</label>
+            <button type="button" id="btn-quick-manage-people" class="text-[11px] text-amber-400 hover:underline flex items-center gap-1">
+              <i class="fa-solid fa-user-plus"></i>
+              <span>Editar caras / añadir persona</span>
+            </button>
+          </div>
+          <!-- Selector visual por burbujas de personas registradas -->
+          <div id="trip-people-selector" class="flex flex-wrap gap-2 mb-2.5"></div>
+          <!-- Añadir alguien rápido por nombre si no está en la lista -->
+          <div class="flex gap-2">
+            <input type="text" id="input-companion-name" placeholder="O escribe otro acompañante rápido..."
+              class="flex-1 rounded-xl bg-space-900/90 border border-slate-700 focus:border-sky-400 focus:outline-none px-3.5 py-2 text-xs text-white placeholder-slate-500" />
+            <button type="button" id="btn-add-companion" class="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-sky-400 text-xs font-semibold border border-slate-700 transition">
+              Añadir
+            </button>
+          </div>
+        </div>
+
+        <!-- Subida Múltiple de Fotos (100% compatible con Android e iOS mediante superposición directa) -->
+        <div>
+          <div class="flex items-center justify-between mb-1.5">
+            <label class="block text-xs font-medium text-slate-300">Adjuntar fotos (Selección múltiple)</label>
+            <span id="exif-badge" class="hidden text-[11px] text-emerald-400 bg-emerald-500/10 border border-emerald-500/30 px-2 py-0.5 rounded-full">
+              <i class="fa-solid fa-satellite-dish mr-1"></i>GPS EXIF detectado
+            </span>
+          </div>
+
+          <div class="native-file-overlay flex flex-col items-center justify-center w-full p-5 rounded-2xl border-2 border-dashed border-sky-500/50 hover:border-sky-400 bg-space-900/60 hover:bg-space-900/90 transition text-center">
+            <i class="fa-solid fa-images text-2xl text-sky-400 mb-2"></i>
+            <span class="text-xs sm:text-sm font-semibold text-white">Toca aquí para adjuntar fotos de tu galería</span>
+            <span class="text-[11px] text-slate-400 mt-1">Permite marcar varias fotos a la vez • Lee GPS automático</span>
+            <input id="input-photos-multiple" type="file" multiple accept="image/*" />
+          </div>
+
+          <!-- Previsualización de fotos seleccionadas -->
+          <div id="selected-photos-preview" class="grid grid-cols-4 sm:grid-cols-6 gap-2 mt-3"></div>
+        </div>
+
+        <!-- Notas del viaje -->
+        <div>
+          <label class="block text-xs font-medium text-slate-300 mb-1.5">Notas o recuerdos del lugar</label>
+          <textarea id="input-trip-notes" rows="2" placeholder="¿Qué fue lo mejor de este sitio?"
+            class="w-full rounded-xl bg-space-900/90 border border-slate-700 focus:border-sky-400 focus:outline-none px-3.5 py-2 text-sm text-white placeholder-slate-500"></textarea>
+        </div>
+
+        <!-- Botón Guardar -->
+        <div class="pt-2 flex items-center justify-end gap-3">
+          <button type="button" data-close-modal="modal-add-trip" class="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium transition">
+            Cancelar
+          </button>
+          <button type="submit" id="btn-submit-trip" class="px-6 py-2.5 rounded-xl bg-gradient-to-r from-sky-500 to-indigo-600 hover:from-sky-400 hover:to-indigo-500 text-white text-xs sm:text-sm font-semibold shadow-lg shadow-sky-500/25 transition flex items-center gap-2">
+            <i class="fa-solid fa-floppy-disk"></i>
+            <span>Guardar en el Globo</span>
+          </button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- MODAL 2: LISTA DE VIAJES Y GESTIÓN LOCAL -->
+  <div id="modal-trips-list" class="fixed inset-0 z-40 hidden bg-black/75 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4">
+    <div class="glass-panel w-full max-w-2xl max-h-[88vh] rounded-t-3xl sm:rounded-3xl flex flex-col overflow-hidden border border-slate-700/70">
+      <div class="px-5 py-4 border-b border-slate-800 flex items-center justify-between gap-2">
+        <div>
+          <h2 class="text-base font-bold text-white">Bitácora de Viajes</h2>
+          <p class="text-[11px] text-slate-400">Filtra por viajero o toca un destino para volar hasta él</p>
+        </div>
+        <div class="flex items-center gap-2">
+          <button id="btn-clear-demo" class="text-[11px] px-3 py-1.5 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 transition">
+            Borrar ejemplos
+          </button>
+          <button data-close-modal="modal-trips-list" class="w-9 h-9 rounded-full bg-slate-800/80 hover:bg-slate-700 text-slate-300 flex items-center justify-center transition">
+            <i class="fa-solid fa-xmark"></i>
+          </button>
+        </div>
+      </div>
+
+      <!-- Barra de Filtro por Viajero -->
+      <div id="trips-filter-bar" class="px-5 py-2.5 border-b border-slate-800/80 flex items-center gap-2 overflow-x-auto"></div>
+
+      <div id="trips-list-container" class="p-5 overflow-y-auto space-y-3 select-text"></div>
+    </div>
+  </div>
+
+  <!-- MODAL 3: GALERÍA 2D DEL LUGAR / VIAJE + FOTOS WIKIMEDIA / INTERNET -->
+  <div id="modal-gallery" class="fixed inset-0 z-40 hidden bg-space-950/95 backdrop-blur-xl flex flex-col overflow-hidden">
+    <!-- Barra Superior Galería -->
+    <div class="px-4 sm:px-6 py-4 border-b border-slate-800/80 flex items-center justify-between gap-3 bg-space-900/70">
+      <div class="flex items-center gap-3 min-w-0">
+        <button data-close-modal="modal-gallery" class="w-10 h-10 rounded-2xl bg-slate-800 hover:bg-slate-700 text-white flex items-center justify-center shrink-0 transition">
+          <i class="fa-solid fa-arrow-left"></i>
+        </button>
+        <div class="min-w-0">
+          <div class="flex items-center gap-2">
+            <h2 id="gallery-title" class="text-base sm:text-xl font-bold text-white truncate">Torre Eiffel, París</h2>
+            <span id="gallery-region-badge" class="hidden sm:inline-block px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-sky-500/15 text-sky-300 border border-sky-500/30">
+              París
+            </span>
+          </div>
+          <p id="gallery-subtitle" class="text-xs text-slate-400 truncate">12 - 16 Oct 2025 • 48.8584° N, 2.2945° E</p>
+        </div>
+      </div>
+
+      <div class="flex items-center gap-2 shrink-0">
+        <!-- Añadir más fotos a este lugar existente (Compatible 100% móvil) -->
+        <div class="native-file-overlay px-3.5 py-2 rounded-xl bg-sky-500 hover:bg-sky-400 text-white text-xs font-semibold flex items-center gap-1.5 shadow-lg shadow-sky-500/20 transition">
+          <i class="fa-solid fa-camera"></i>
+          <span>Añadir fotos</span>
+          <input id="input-add-more-photos" type="file" multiple accept="image/*" />
+        </div>
+
+        <button id="btn-gallery-street-view" class="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium border border-slate-700 flex items-center gap-1.5 transition">
+          <i class="fa-solid fa-map-pin text-amber-400"></i>
+          <span class="hidden sm:inline">Ver Calle</span>
+        </button>
+
+        <button id="btn-delete-place" title="Eliminar este lugar" class="w-9 h-9 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 border border-rose-500/30 flex items-center justify-center transition">
+          <i class="fa-solid fa-trash-can text-xs"></i>
+        </button>
+      </div>
+    </div>
+
+    <!-- Contenido Scrollable Galería -->
+    <div class="flex-1 overflow-y-auto p-4 sm:p-6 max-w-6xl w-full mx-auto space-y-8 select-text">
+      <!-- Info de Participantes, Notas y Recorrido del Viaje -->
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
+        <div class="glass-panel rounded-2xl p-4 lg:col-span-2 space-y-3">
+          <div class="flex flex-wrap items-center justify-between gap-2">
+            <span class="text-xs font-semibold uppercase tracking-wider text-sky-400">Diario & Viajeros</span>
+            <div id="gallery-participants" class="flex flex-wrap items-center gap-1.5"></div>
+          </div>
+          <p id="gallery-notes" class="text-sm text-slate-300 leading-relaxed">
+            Un paseo inolvidable viendo el atardecer.
+          </p>
+          <!-- Mini ruta de paradas del mismo viaje -->
+          <div id="gallery-trip-stops" class="pt-2 border-t border-slate-800/80 flex flex-wrap items-center gap-2"></div>
+        </div>
+
+        <!-- Mini Mapa de Ubicación Exacta -->
+        <div class="glass-panel rounded-2xl overflow-hidden flex flex-col min-h-[160px]">
+          <div id="gallery-mini-map" class="w-full h-36 bg-space-900"></div>
+          <div class="px-3.5 py-2 bg-space-900/90 flex items-center justify-between text-[11px] text-slate-400">
+            <span id="gallery-coords-text">48.8584, 2.2945</span>
+            <span class="text-emerald-400"><i class="fa-solid fa-check-circle mr-1"></i>Geolocalizado</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- SECCIÓN 1: TUS FOTOS LOCALES -->
+      <section class="space-y-3">
+        <div class="flex items-center justify-between">
+          <h3 class="text-sm sm:text-base font-bold text-white flex items-center gap-2">
+            <i class="fa-solid fa-images text-sky-400"></i>
+            <span>Tus Fotos del Viaje</span>
+            <span id="gallery-user-photos-count" class="text-xs font-normal text-slate-400">(0)</span>
+          </h3>
+        </div>
+        <div id="gallery-user-photos-grid" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3"></div>
+      </section>
+
+      <!-- SECCIÓN 2: FOTOS DESTACADAS DEL MONUMENTO / LUGAR (Vía Wikimedia Commons / Wikipedia gratis con Wi-Fi) -->
+      <section class="space-y-3 pb-10">
+        <div class="flex items-center justify-between">
+          <div>
+            <h3 class="text-sm sm:text-base font-bold text-white flex items-center gap-2">
+              <i class="fa-solid fa-wand-magic-sparkles text-amber-400"></i>
+              <span>Postales Icónicas del Lugar</span>
+            </h3>
+            <p class="text-xs text-slate-400">Imágenes públicas destacadas obtenidas automáticamente por ubicación</p>
+          </div>
+          <span id="wiki-status-badge" class="text-[11px] px-2.5 py-1 rounded-full bg-slate-800 text-slate-300">
+            Buscando...
+          </span>
+        </div>
+        <div id="gallery-wiki-summary" class="hidden glass-panel rounded-2xl p-4 text-xs sm:text-sm text-slate-300 leading-relaxed"></div>
+        <div id="gallery-wiki-photos-grid" class="grid grid-cols-2 sm:grid-cols-4 gap-3"></div>
+      </section>
+    </div>
+  </div>
+
+  <!-- MODAL 4: VISOR LIGHTBOX DE FOTO EN PANTALLA COMPLETA -->
+  <div id="modal-lightbox" class="fixed inset-0 z-50 hidden bg-black/95 flex flex-col items-center justify-center p-4">
+    <button data-close-modal="modal-lightbox" class="absolute top-4 right-4 w-11 h-11 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center text-lg transition">
+      <i class="fa-solid fa-xmark"></i>
+    </button>
+    <img id="lightbox-img" src="" alt="Vista ampliada" class="max-w-full max-h-[82vh] rounded-2xl object-contain shadow-2xl" />
+    <p id="lightbox-caption" class="mt-3 text-xs sm:text-sm text-slate-300 text-center max-w-xl"></p>
+  </div>
+
+  <!-- MODAL 5: PERSONAS Y EDITOR DE AVATARES CON CARAS REALES (RECORTE Y ENCUADRE) -->
+  <div id="modal-people" class="fixed inset-0 z-40 hidden bg-black/80 backdrop-blur-sm flex items-end sm:items-center justify-center p-0 sm:p-4">
+    <div class="glass-panel w-full max-w-2xl max-h-[92vh] rounded-t-3xl sm:rounded-3xl flex flex-col overflow-hidden border border-slate-700/70">
+      <div class="px-5 py-4 border-b border-slate-800 flex items-center justify-between">
+        <div class="flex items-center gap-2.5">
+          <div class="w-9 h-9 rounded-xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center text-amber-400">
+            <i class="fa-solid fa-face-smile-beam"></i>
+          </div>
+          <div>
+            <h2 class="text-base font-bold text-white">Personas & Avatares Reales</h2>
+            <p class="text-[11px] text-slate-400">Sube y encuadra las caras que aparecerán en los globitos del mapa</p>
+          </div>
+        </div>
+        <button data-close-modal="modal-people" class="w-9 h-9 rounded-full bg-slate-800/80 hover:bg-slate-700 text-slate-300 flex items-center justify-center transition">
+          <i class="fa-solid fa-xmark"></i>
+        </button>
+      </div>
+
+      <div class="p-5 overflow-y-auto space-y-6 select-text">
+        <!-- Lista de Personas Guardadas -->
+        <div class="space-y-2.5">
+          <div class="flex items-center justify-between">
+            <span class="text-xs font-semibold uppercase tracking-wider text-slate-400">Viajeros Registrados</span>
+            <button type="button" id="btn-new-person-reset" class="text-xs text-sky-400 hover:underline flex items-center gap-1">
+              <i class="fa-solid fa-plus"></i>
+              <span>Nueva persona</span>
+            </button>
+          </div>
+          <div id="people-cards-grid" class="grid grid-cols-2 sm:grid-cols-3 gap-2.5"></div>
+        </div>
+
+        <!-- Editor de Cara / Encuadre Circular -->
+        <div class="rounded-2xl bg-space-900/90 border border-slate-800 p-4 space-y-4">
+          <div class="flex items-center justify-between">
+            <h3 id="person-editor-title" class="text-sm font-bold text-white">Editar Avatar / Cara</h3>
+            <span id="person-primary-badge" class="hidden text-[10px] px-2 py-0.5 rounded-full bg-sky-500/20 text-sky-300 border border-sky-500/30">
+              Perfil Principal (Tú)
+            </span>
+          </div>
+
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 items-center">
+            <!-- Vista Previa Circular Interactiva (Canvas de Encuadre) -->
+            <div class="flex flex-col items-center gap-2.5">
+              <div class="relative w-32 h-32 rounded-full p-1 bg-gradient-to-tr from-sky-400 to-amber-400 shadow-xl">
+                <canvas id="avatar-crop-canvas" width="240" height="240" class="w-full h-full rounded-full bg-space-950 cursor-grab active:cursor-grabbing"></canvas>
+              </div>
+              <div class="native-file-overlay px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-medium text-sky-300 flex items-center gap-2 transition">
+                <i class="fa-solid fa-camera"></i>
+                <span>Elegir foto de cara</span>
+                <input type="file" id="input-person-face-file" accept="image/*" />
+              </div>
+            </div>
+
+            <!-- Controles de Nombre y Ajuste fino de la Cara (Zoom y Posición X/Y) -->
+            <div class="space-y-3">
+              <div>
+                <label class="block text-xs text-slate-300 mb-1">Nombre del viajero *</label>
+                <input type="text" id="input-person-name" placeholder="Ej. Francisco, Laura, Sofía..."
+                  class="w-full rounded-xl bg-space-950 border border-slate-700 focus:border-sky-400 focus:outline-none px-3 py-2 text-sm text-white" />
+              </div>
+
+              <!-- Sliders de encuadre facial -->
+              <div id="face-adjust-controls" class="space-y-2 opacity-50 pointer-events-none">
+                <div>
+                  <div class="flex justify-between text-[10px] text-slate-400">
+                    <span>Zoom de la cara</span>
+                    <span id="crop-zoom-val">1.0x</span>
+                  </div>
+                  <input type="range" id="crop-zoom-slider" min="0.5" max="3.0" step="0.05" value="1" class="w-full accent-sky-400" />
+                </div>
+                <div class="grid grid-cols-2 gap-2">
+                  <div>
+                    <span class="block text-[10px] text-slate-400">Mover Horizontal</span>
+                    <input type="range" id="crop-x-slider" min="-120" max="120" step="1" value="0" class="w-full accent-sky-400" />
+                  </div>
+                  <div>
+                    <span class="block text-[10px] text-slate-400">Mover Vertical</span>
+                    <input type="range" id="crop-y-slider" min="-120" max="120" step="1" value="0" class="w-full accent-sky-400" />
+                  </div>
+                </div>
+              </div>
+
+              <div class="flex items-center justify-between pt-1 gap-2">
+                <button type="button" id="btn-delete-person" class="hidden px-3 py-2 rounded-xl bg-rose-500/15 hover:bg-rose-500/25 text-rose-400 text-xs font-medium transition">
+                  Eliminar
+                </button>
+                <button type="button" id="btn-save-person" class="ml-auto px-5 py-2 rounded-xl bg-gradient-to-r from-sky-500 to-indigo-600 hover:from-sky-400 hover:to-indigo-500 text-white text-xs font-semibold shadow-lg shadow-sky-500/20 transition">
+                  Guardar Cara
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- TOAST DE NOTIFICACIONES (Sin usar alert()) -->
+  <div id="toast-container" class="fixed top-20 right-4 z-50 flex flex-col gap-2 pointer-events-none max-w-xs"></div>
+
+  <script>
+    /**
+     * ============================================================================
+     * LA APP DEL VIAJERO - ARQUITECTURA LOCAL (IndexedDB + Globe.gl + Leaflet)
+     * ============================================================================
+     */
+
+    // --- 1. UTILIDADES DE INTERFAZ Y NOTIFICACIONES ---
+    function showToast(message, type = 'info') {
+      const container = document.getElementById('toast-container');
+      const toast = document.createElement('div');
+      const colors = {
+        info: 'border-sky-500/50 bg-space-900/95 text-sky-200',
+        success: 'border-emerald-500/50 bg-space-900/95 text-emerald-200',
+        warning: 'border-amber-500/50 bg-space-900/95 text-amber-200',
+        error: 'border-rose-500/50 bg-space-900/95 text-rose-200'
+      };
+      const icons = {
+        info: 'fa-circle-info text-sky-400',
+        success: 'fa-circle-check text-emerald-400',
+        warning: 'fa-triangle-exclamation text-amber-400',
+        error: 'fa-circle-xmark text-rose-400'
+      };
+      toast.className = `pointer-events-auto glass-panel border ${colors[type] || colors.info} rounded-2xl px-4 py-3 text-xs font-medium shadow-xl flex items-center gap-2.5 transition-all duration-300 translate-x-4 opacity-0`;
+      toast.innerHTML = `<i class="fa-solid ${icons[type] || icons.info} text-sm"></i><span>${message}</span>`;
+      container.appendChild(toast);
+
+      requestAnimationFrame(() => {
+        toast.classList.remove('translate-x-4', 'opacity-0');
+      });
+
+      setTimeout(() => {
+        toast.classList.add('translate-x-4', 'opacity-0');
+        setTimeout(() => toast.remove(), 300);
+      }, 3400);
+    }
+
+    // --- 2. BASE DE DATOS LOCAL PRIVADA (IndexedDB v2 con almacén de Personas/Caras) ---
+    const DB_NAME = 'LaAppDelViajeroDB';
+    const DB_VERSION = 2;
+    let db = null;
+
+    function initDB() {
+      return new Promise((resolve, reject) => {
+        const request = indexedDB.open(DB_NAME, DB_VERSION);
+        request.onupgradeneeded = (e) => {
+          const database = e.target.result;
+          if (!database.objectStoreNames.contains('places')) {
+            database.createObjectStore('places', { keyPath: 'id' });
+          }
+          if (!database.objectStoreNames.contains('photos')) {
+            const photoStore = database.createObjectStore('photos', { keyPath: 'id' });
+            photoStore.createIndex('placeId', 'placeId', { unique: false });
+          }
+          if (!database.objectStoreNames.contains('people')) {
+            database.createObjectStore('people', { keyPath: 'id' });
+          }
+        };
+        request.onsuccess = (e) => {
+          db = e.target.result;
+          resolve(db);
+        };
+        request.onerror = (e) => reject(e.target.error);
+      });
+    }
+
+    function dbGetAll(storeName) {
+      return new Promise((resolve, reject) => {
+        const tx = db.transaction(storeName, 'readonly');
+        const store = tx.objectStore(storeName);
+        const req = store.getAll();
+        req.onsuccess = () => resolve(req.result || []);
+        req.onerror = () => reject(req.error);
+      });
+    }
+
+    function dbPut(storeName, item) {
+      return new Promise((resolve, reject) => {
+        const tx = db.transaction(storeName, 'readwrite');
+        const store = tx.objectStore(storeName);
+        const req = store.put(item);
+        req.onsuccess = () => resolve(req.result);
+        req.onerror = () => reject(req.error);
+      });
+    }
+
+    function dbDelete(storeName, key) {
+      return new Promise((resolve, reject) => {
+        const tx = db.transaction(storeName, 'readwrite');
+        const store = tx.objectStore(storeName);
+        const req = store.delete(key);
+        req.onsuccess = () => resolve();
+        req.onerror = () => reject(req.error);
+      });
+    }
+
+    function dbGetPhotosByPlace(placeId) {
+      return new Promise((resolve, reject) => {
+        const tx = db.transaction('photos', 'readonly');
+        const store = tx.objectStore('photos');
+        const index = store.index('placeId');
+        const req = index.getAll(placeId);
+        req.onsuccess = () => resolve(req.result || []);
+        req.onerror = () => reject(req.error);
+      });
+    }
+
+    // --- 3. ESTADO GLOBAL DE LA APLICACIÓN ---
+    const AppState = {
+      people: [], // { id, name, faceDataUrl, color, isPrimary }
+      places: [],
+      activeBranchRegion: null,
+      currentGalleryPlaceId: null,
+      isStreetMapMode: false,
+      isUserInteracting: false,
+      isZoomedIn: false,
+      idleTimer: null,
+      selectedTripPeopleNames: [], // Nombres seleccionados en el formulario de nuevo viaje
+      tripsFilterPerson: 'ALL',
+      tempPhotos: [] // { id, blob, previewUrl, lat, lng, name }
+    };
+
+    const AVATAR_COLORS = [
+      'from-sky-500 to-blue-600',
+      'from-amber-500 to-orange-600',
+      'from-emerald-500 to-teal-600',
+      'from-indigo-500 to-purple-600',
+      'from-rose-500 to-pink-600'
+    ];
+
+    const DEFAULT_PEOPLE = [
+      { id: 'person-main', name: 'Francisco', faceDataUrl: null, color: AVATAR_COLORS[0], isPrimary: true },
+      { id: 'person-2', name: 'Laura', faceDataUrl: null, color: AVATAR_COLORS[1], isPrimary: false },
+      { id: 'person-3', name: 'Sofía', faceDataUrl: null, color: AVATAR_COLORS[2], isPrimary: false }
+    ];
+
+    // --- 4. DATOS DE EJEMPLO PRECARGADOS (París con sub-lugares, Teruel Dinópolis, Madrid) ---
+    const SAMPLE_PLACES = [
+      {
+        id: 'sample-paris-eiffel',
+        tripName: 'Escapada a París',
+        parentRegion: 'París',
+        placeName: 'Torre Eiffel, París',
+        wikiQuery: 'Torre Eiffel',
+        lat: 48.8584,
+        lng: 2.2945,
+        startDate: '2025-10-12',
+        endDate: '2025-10-16',
+        companions: ['Laura', 'Sofía'],
+        notes: 'Subimos al atardecer cuando empiezan a brillar las luces doradas sobre el Sena.',
+        isSample: true
+      },
+      {
+        id: 'sample-paris-disney',
+        tripName: 'Escapada a París',
+        parentRegion: 'París',
+        placeName: 'Disneyland París',
+        wikiQuery: 'Disneyland Paris',
+        lat: 48.8674,
+        lng: 2.7836,
+        startDate: '2025-10-14',
+        endDate: '2025-10-15',
+        companions: ['Laura', 'Sofía'],
+        notes: 'Día completo en el parque y espectáculo nocturno en el castillo de la Bella Durmiente.',
+        isSample: true
+      },
+      {
+        id: 'sample-teruel-dinopolis',
+        tripName: 'Ruta en Camper por Aragón',
+        parentRegion: 'Teruel',
+        placeName: 'Dinópolis, Teruel',
+        wikiQuery: 'Dinópolis',
+        lat: 40.3342,
+        lng: -1.0858,
+        startDate: '2026-04-03',
+        endDate: '2026-04-06',
+        companions: ['Laura', 'Sofía'],
+        notes: 'Dormimos con la camper cerca y visitamos el museo paleontológico y el centro histórico mudéjar.',
+        isSample: true
+      },
+      {
+        id: 'sample-madrid-retiro',
+        tripName: 'Fin de semana en Madrid',
+        parentRegion: 'Madrid',
+        placeName: 'Parque del Retiro, Madrid',
+        wikiQuery: 'Parque del Retiro de Madrid',
+        lat: 40.4153,
+        lng: -3.6845,
+        startDate: '2026-06-19',
+        endDate: '2026-06-21',
+        companions: ['Laura'],
+        notes: 'Paseo en barca por el estanque, Palacio de Cristal y tapas por La Latina.',
+        isSample: true
+      }
+    ];
+
+    // Base local instantánea de ciudades/pueblos (respaldo offline rápido)
+    const LOCAL_CITIES_FALLBACK = [
+      { label: 'Madrid, España', shortName: 'Madrid', regionHint: 'Madrid', lat: 40.4168, lng: -3.7038 },
+      { label: 'Teruel, España', shortName: 'Teruel', regionHint: 'Teruel', lat: 40.3456, lng: -1.1065 },
+      { label: 'Dinópolis, Teruel, España', shortName: 'Dinópolis, Teruel', regionHint: 'Teruel', lat: 40.3342, lng: -1.0858 },
+      { label: 'Albarracín, Teruel, España', shortName: 'Albarracín', regionHint: 'Teruel', lat: 40.4089, lng: -1.4442 },
+      { label: 'París, Francia', shortName: 'París', regionHint: 'París', lat: 48.8566, lng: 2.3522 },
+      { label: 'Torre Eiffel, París, Francia', shortName: 'Torre Eiffel', regionHint: 'París', lat: 48.8584, lng: 2.2945 },
+      { label: 'Disneyland París, Francia', shortName: 'Disneyland París', regionHint: 'París', lat: 48.8674, lng: 2.7836 },
+      { label: 'Barcelona, España', shortName: 'Barcelona', regionHint: 'Barcelona', lat: 41.3874, lng: 2.1686 },
+      { label: 'Valencia, España', shortName: 'Valencia', regionHint: 'Valencia', lat: 39.4699, lng: -0.3763 },
+      { label: 'Sevilla, España', shortName: 'Sevilla', regionHint: 'Sevilla', lat: 37.3891, lng: -5.9845 },
+      { label: 'Roma, Italia', shortName: 'Roma', regionHint: 'Roma', lat: 41.9028, lng: 12.4964 },
+      { label: 'Londres, Reino Unido', shortName: 'Londres', regionHint: 'Londres', lat: 51.5072, lng: -0.1276 },
+      { label: 'Berlín, Alemania', shortName: 'Berlín', regionHint: 'Berlín', lat: 52.5200, lng: 13.4050 },
+      { label: 'Tokio, Japón', shortName: 'Tokio', regionHint: 'Tokio', lat: 35.6762, lng: 139.6503 },
+      { label: 'Nueva York, Estados Unidos', shortName: 'Nueva York', regionHint: 'Nueva York', lat: 40.7128, lng: -74.0060 }
+    ];
+
+    async function seedInitialDataIfNeeded() {
+      const existingPeople = await dbGetAll('people');
+      if (existingPeople.length === 0) {
+        for (const person of DEFAULT_PEOPLE) {
+          await dbPut('people', person);
+        }
+      }
+      AppState.people = await dbGetAll('people');
+
+      const existingPlaces = await dbGetAll('places');
+      const seededFlag = localStorage.getItem('traveler_seeded_v2');
+      if (existingPlaces.length === 0 && !seededFlag) {
+        for (const p of SAMPLE_PLACES) {
+          await dbPut('places', p);
+        }
+        localStorage.setItem('traveler_seeded_v2', 'true');
+      }
+      AppState.places = await dbGetAll('places');
+      AppState.places.sort((a, b) => (a.startDate || '').localeCompare(b.startDate || ''));
+    }
+
+    // Obtener objeto persona por nombre (para renderizar su cara real si existe)
+    function getPersonByName(name) {
+      if (!name) return null;
+      return AppState.people.find(p => p.name.toLowerCase() === name.trim().toLowerCase()) || null;
+    }
+
+    function getPrimaryPerson() {
+      return AppState.people.find(p => p.isPrimary) || AppState.people[0] || { name: 'Yo', faceDataUrl: null, color: AVATAR_COLORS[0] };
+    }
+
+    function renderAvatarBubbleHtml(name, sizeClass = 'w-6 h-6 text-[10px]', extraClasses = '') {
+      const person = getPersonByName(name);
+      const initials = (name || '?').trim().slice(0, 2).toUpperCase();
+      const grad = person?.color || AVATAR_COLORS[0];
+
+      if (person && person.faceDataUrl) {
+        return `<img src="${person.faceDataUrl}" alt="${name}" title="${name}" class="${sizeClass} ${extraClasses} rounded-full object-cover border border-white/80 shadow-sm shrink-0 bg-space-900" />`;
+      }
+      return `<span title="${name}" class="${sizeClass} ${extraClasses} rounded-full bg-gradient-to-br ${grad} border border-white/60 font-bold text-white flex items-center justify-center shadow-sm shrink-0">${initials}</span>`;
+    }
+
+    // --- 5. MOTOR GLOBO TERRÁQUEO 3D (Globe.gl) CON ZOOM ULTRA FLUIDO ---
+    let worldGlobe = null;
+    let streetMap = null;
+    let streetMarkersLayer = null;
+    let galleryMiniMap = null;
+
+    function initGlobe() {
+      const container = document.getElementById('globe-container');
+
+      worldGlobe = Globe()(container)
+        .globeImageUrl('https://unpkg.com/three-globe/example/img/earth-blue-marble.jpg')
+        .bumpImageUrl('https://unpkg.com/three-globe/example/img/earth-topology.png')
+        .backgroundImageUrl('https://unpkg.com/three-globe/example/img/night-sky.png')
+        .showAtmosphere(true)
+        .atmosphereColor('#38bdf8')
+        .atmosphereAltitude(0.16)
+        .arcsData([])
+        .arcColor(() => ['rgba(56, 189, 248, 0.85)', 'rgba(129, 140, 248, 0.85)'])
+        .arcDashLength(0.45)
+        .arcDashGap(0.2)
+        .arcDashAnimateTime(2400)
+        .arcStroke(0.65)
+        .htmlElementsData([])
+        .htmlLat(d => d.lat)
+        .htmlLng(d => d.lng)
+        .htmlAltitude(0.015)
+        .htmlElement(d => createPinElement(d));
+
+      // Vista inicial centrada en Europa
+      worldGlobe.pointOfView({ lat: 38, lng: 3, altitude: 2.1 }, 0);
+
+      // Ajuste fino de OrbitControls para zoom sedoso y preciso en móvil y PC
+      const controls = worldGlobe.controls();
+      controls.enableDamping = true;
+      controls.dampingFactor = 0.085;
+      controls.rotateSpeed = 0.62;
+      controls.zoomSpeed = 0.78;
+      controls.panSpeed = 0.65;
+      controls.minDistance = 108;
+      controls.maxDistance = 480;
+
+      setOrbitRotation(true);
+
+      const handleInteractionStart = () => {
+        AppState.isUserInteracting = true;
+        setOrbitRotation(false);
+        clearTimeout(AppState.idleTimer);
+      };
+
+      const handleInteractionEnd = () => {
+        AppState.isUserInteracting = false;
+        evaluateZoomAndIdle();
+      };
+
+      container.addEventListener('mousedown', handleInteractionStart);
+      container.addEventListener('touchstart', handleInteractionStart, { passive: true });
+      container.addEventListener('wheel', () => {
+        setOrbitRotation(false);
+        clearTimeout(AppState.idleTimer);
+        scheduleOrbitResume();
+      }, { passive: true });
+      window.addEventListener('mouseup', handleInteractionEnd);
+      window.addEventListener('touchend', handleInteractionEnd);
+
+      let transitionLock = false;
+      controls.addEventListener('change', () => {
+        const pov = worldGlobe.pointOfView();
+
+        if (pov.altitude < 1.55) {
+          AppState.isZoomedIn = true;
+          setOrbitRotation(false);
+          clearTimeout(AppState.idleTimer);
+
+          // Transición suave a Mapa Satélite HD cuando se acerca mucho a nivel urbano
+          if (pov.altitude < 0.22 && !AppState.isStreetMapMode && !transitionLock) {
+            transitionLock = true;
+            switchToStreetMap(pov.lat, pov.lng, 15);
+            setTimeout(() => { transitionLock = false; }, 700);
+          }
+        } else {
+          AppState.isZoomedIn = false;
+          if (!AppState.isUserInteracting) {
+            scheduleOrbitResume();
+          }
+        }
+      });
+
+      window.addEventListener('resize', () => {
+        if (worldGlobe) {
+          worldGlobe.width(window.innerWidth);
+          worldGlobe.height(window.innerHeight);
+        }
+      });
+    }
+
+    function setOrbitRotation(active) {
+      if (!worldGlobe) return;
+      const controls = worldGlobe.controls();
+      controls.autoRotate = active;
+      controls.autoRotateSpeed = 0.42;
+
+      const label = document.getElementById('orbit-label');
+      const dot = document.getElementById('orbit-dot');
+      if (active) {
+        label.textContent = 'Órbita Activa';
+        dot.className = 'relative w-2 h-2 rounded-full bg-sky-400 text-sky-400 orbit-indicator-dot';
+      } else {
+        label.textContent = 'Globo Fijo';
+        dot.className = 'relative w-2 h-2 rounded-full bg-amber-400 text-amber-400';
+      }
+    }
+
+    function scheduleOrbitResume() {
+      clearTimeout(AppState.idleTimer);
+      AppState.idleTimer = setTimeout(() => {
+        if (!worldGlobe || AppState.isStreetMapMode) return;
+        const pov = worldGlobe.pointOfView();
+        if (pov.altitude >= 1.55 && !AppState.isUserInteracting && !AppState.activeBranchRegion) {
+          setOrbitRotation(true);
+        }
+      }, 2200);
+    }
+
+    function evaluateZoomAndIdle() {
+      if (!worldGlobe) return;
+      const pov = worldGlobe.pointOfView();
+      if (pov.altitude >= 1.55 && !AppState.activeBranchRegion) {
+        scheduleOrbitResume();
+      } else {
+        setOrbitRotation(false);
+      }
+    }
+
+    // --- 6. JERARQUÍA VISUAL DE PINES CON CARAS REALES (ÁLBUMES / RAMAS) ---
+    function computeVisibleNodes() {
+      const places = AppState.places;
+      if (!places.length) return [];
+
+      if (AppState.activeBranchRegion) {
+        return places
+          .filter(p => (p.parentRegion || p.placeName).toLowerCase() === AppState.activeBranchRegion.toLowerCase())
+          .map(p => ({
+            ...p,
+            nodeType: 'leaf',
+            displayTitle: p.placeName,
+            subCount: 1
+          }));
+      }
+
+      const groups = new Map();
+      for (const p of places) {
+        const key = (p.parentRegion || p.placeName).trim();
+        if (!groups.has(key)) groups.set(key, []);
+        groups.get(key).push(p);
+      }
+
+      const nodes = [];
+      groups.forEach((items, regionKey) => {
+        if (items.length > 1) {
+          const avgLat = items.reduce((s, x) => s + x.lat, 0) / items.length;
+          const avgLng = items.reduce((s, x) => s + x.lng, 0) / items.length;
+          const allCompanions = [...new Set(items.flatMap(x => x.companions || []))];
+          nodes.push({
+            id: `branch-${regionKey}`,
+            nodeType: 'branch',
+            regionName: regionKey,
+            displayTitle: `${regionKey} (${items.length} lugares)`,
+            lat: avgLat,
+            lng: avgLng,
+            companions: allCompanions,
+            subItems: items,
+            subCount: items.length
+          });
+        } else {
+          const single = items[0];
+          nodes.push({
+            ...single,
+            nodeType: 'leaf',
+            displayTitle: single.placeName,
+            subCount: 1
+          });
+        }
+      });
+
+      return nodes;
+    }
+
+    function createPinElement(node) {
+      const wrapper = document.createElement('div');
+      wrapper.className = 'globe-pin-wrapper';
+
+      const isSubOrBranch = node.nodeType === 'branch' || Boolean(AppState.activeBranchRegion);
+      const primary = getPrimaryPerson();
+
+      // Burbuja del viajero principal (cara real o iniciales)
+      const mainBubble = renderAvatarBubbleHtml(primary.name, 'w-6 h-6 text-[10px]');
+
+      // Burbujas superpuestas de los acompañantes (caras reales o iniciales)
+      const compList = (node.companions || []).filter(c => c.toLowerCase() !== primary.name.toLowerCase());
+      const compHtml = compList.slice(0, 3).map(name =>
+        renderAvatarBubbleHtml(name, 'w-6 h-6 text-[10px]', '-ml-2')
+      ).join('');
+
+      const extraComp = compList.length > 3
+        ? `<span class="w-5 h-5 -ml-1.5 rounded-full bg-slate-700 border border-space-950 text-[9px] font-bold text-slate-200 flex items-center justify-center">+${compList.length - 3}</span>`
+        : '';
+
+      const badgeIcon = node.nodeType === 'branch'
+        ? `<i class="fa-solid fa-layer-group text-amber-400 text-[10px] ml-0.5"></i>`
+        : '';
+
+      wrapper.innerHTML = `
+        <div class="pin-bubble ${isSubOrBranch ? 'sub-place' : ''}">
+          <div class="flex items-center">
+            ${mainBubble}
+            ${compHtml}
+            ${extraComp}
+          </div>
+          <span class="text-[11px] font-semibold text-white tracking-tight max-w-[145px] truncate">
+            ${node.displayTitle}
+          </span>
+          ${badgeIcon}
+        </div>
+        <div class="pin-stem ${isSubOrBranch ? 'sub-place' : ''}"></div>
+        <div class="pin-dot ${isSubOrBranch ? 'sub-place' : ''}"></div>
+      `;
+
+      wrapper.addEventListener('click', (e) => {
+        e.stopPropagation();
+        handlePinClick(node);
+      });
+
+      return wrapper;
+    }
+
+    function handlePinClick(node) {
+      setOrbitRotation(false);
+
+      if (node.nodeType === 'branch') {
+        AppState.activeBranchRegion = node.regionName;
+        updateBranchBanner();
+        refreshGlobeData();
+        worldGlobe.pointOfView({ lat: node.lat, lng: node.lng, altitude: 0.42 }, 1050);
+        showToast(`Explorando ${node.regionName}: toca una parada para abrir sus fotos`, 'info');
+      } else {
+        worldGlobe.pointOfView({ lat: node.lat, lng: node.lng, altitude: 0.52 }, 700);
+        setTimeout(() => openPlaceGallery(node.id), 420);
+      }
+    }
+
+    function updateBranchBanner() {
+      const banner = document.getElementById('branch-banner');
+      const title = document.getElementById('branch-banner-title');
+      if (AppState.activeBranchRegion) {
+        title.textContent = `Rama: ${AppState.activeBranchRegion}`;
+        banner.classList.remove('hidden');
+      } else {
+        banner.classList.add('hidden');
+      }
+    }
+
+    function refreshGlobeData() {
+      const nodes = computeVisibleNodes();
+      if (worldGlobe) {
+        worldGlobe.htmlElementsData(nodes);
+
+        const sorted = [...AppState.places].sort((a, b) => (a.startDate || '').localeCompare(b.startDate || ''));
+        const arcs = [];
+        for (let i = 0; i < sorted.length - 1; i++) {
+          arcs.push({
+            startLat: sorted[i].lat,
+            startLng: sorted[i].lng,
+            endLat: sorted[i + 1].lat,
+            endLng: sorted[i + 1].lng
+          });
+        }
+        worldGlobe.arcsData(arcs);
+      }
+
+      const uniqueTrips = new Set(AppState.places.map(p => p.tripName)).size;
+      document.getElementById('header-stats').textContent =
+        `${uniqueTrips} ${uniqueTrips === 1 ? 'viaje' : 'viajes'} • ${AppState.places.length} ${AppState.places.length === 1 ? 'lugar' : 'lugares'}`;
+
+      if (AppState.isStreetMapMode) {
+        renderStreetMapMarkers();
+      }
+    }
+
+    // --- 7. MAPA DETALLADO NIVEL CALLE / SATÉLITE (Leaflet + Esri / OSM) ---
+    function initStreetMap() {
+      streetMap = L.map('street-map-container', {
+        zoomControl: false,
+        attributionControl: true,
+        zoomSnap: 0.25,
+        wheelPxPerZoomLevel: 90
+      }).setView([40.4168, -3.7038], 13);
+
+      const esriSat = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+        maxZoom: 19,
+        attribution: 'Esri World Imagery'
+      });
+
+      const osmLabels = L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_only_labels/{z}/{x}/{y}{r}.png', {
+        maxZoom: 19,
+        subdomains: 'abcd'
+      });
+
+      const osmStreets = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        maxZoom: 19,
+        attribution: '&copy; OpenStreetMap'
+      });
+
+      esriSat.addTo(streetMap);
+      osmLabels.addTo(streetMap);
+
+      L.control.layers(
+        { 'Satélite HD': esriSat, 'Mapa Calles': osmStreets },
+        { 'Nombres y Calles': osmLabels },
+        { position: 'bottomright' }
+      ).addTo(streetMap);
+
+      streetMarkersLayer = L.layerGroup().addTo(streetMap);
+
+      streetMap.on('zoomend', () => {
+        if (AppState.isStreetMapMode && streetMap.getZoom() <= 4.2) {
+          switchToGlobeMode();
+        }
+      });
+    }
+
+    function switchToStreetMap(lat = 40.4168, lng = -3.7038, zoom = 14) {
+      if (!streetMap) initStreetMap();
+      AppState.isStreetMapMode = true;
+      setOrbitRotation(false);
+
+      const wrapper = document.getElementById('street-map-wrapper');
+      wrapper.classList.remove('hidden');
+      requestAnimationFrame(() => wrapper.classList.remove('opacity-0'));
+
+      streetMap.invalidateSize();
+      streetMap.setView([lat, lng], zoom, { animate: true });
+      renderStreetMapMarkers();
+
+      document.getElementById('map-mode-icon').className = 'fa-solid fa-globe text-sky-400';
+      document.getElementById('map-mode-text').textContent = 'Globo 3D';
+    }
+
+    function switchToGlobeMode() {
+      AppState.isStreetMapMode = false;
+      const wrapper = document.getElementById('street-map-wrapper');
+      wrapper.classList.add('opacity-0');
+      setTimeout(() => wrapper.classList.add('hidden'), 420);
+
+      if (streetMap && worldGlobe) {
+        const center = streetMap.getCenter();
+        worldGlobe.pointOfView({ lat: center.lat, lng: center.lng, altitude: 1.65 }, 850);
+      }
+
+      document.getElementById('map-mode-icon').className = 'fa-solid fa-map-location-dot text-sky-400';
+      document.getElementById('map-mode-text').textContent = 'Mapa HD';
+      scheduleOrbitResume();
+    }
+
+    function renderStreetMapMarkers() {
+      if (!streetMarkersLayer) return;
+      streetMarkersLayer.clearLayers();
+
+      const sorted = [...AppState.places].sort((a, b) => (a.startDate || '').localeCompare(b.startDate || ''));
+      if (sorted.length > 1) {
+        const latlngs = sorted.map(p => [p.lat, p.lng]);
+        L.polyline(latlngs, { color: '#38bdf8', weight: 3, dashArray: '6, 8', opacity: 0.8 }).addTo(streetMarkersLayer);
+      }
+
+      const primary = getPrimaryPerson();
+      AppState.places.forEach(place => {
+        const mainAvatar = renderAvatarBubbleHtml(primary.name, 'w-6 h-6 text-[10px]');
+        const compAvatars = (place.companions || [])
+          .filter(c => c.toLowerCase() !== primary.name.toLowerCase())
+          .slice(0, 2)
+          .map(c => renderAvatarBubbleHtml(c, 'w-6 h-6 text-[10px]', '-ml-2'))
+          .join('');
+
+        const customIcon = L.divIcon({
+          className: 'custom-leaflet-pin',
+          html: `
+            <div class="pin-bubble" style="transform: translate(-35%, -100%);">
+              <div class="flex items-center">${mainAvatar}${compAvatars}</div>
+              <span class="text-[11px] font-bold text-white">${place.placeName}</span>
+            </div>
+          `,
+          iconSize: [24, 24]
+        });
+
+        const marker = L.marker([place.lat, place.lng], { icon: customIcon }).addTo(streetMarkersLayer);
+        marker.on('click', () => openPlaceGallery(place.id));
+      });
+    }
+
+    // --- 8. AUTOCOMPLETADO DE CIUDADES/PUEBLOS + GPS + LECTURA EXIF ---
+    let searchDebounce = null;
+
+    function setupPlaceAutocomplete() {
+      const input = document.getElementById('input-place-search');
+      const dropdown = document.getElementById('autocomplete-results');
+      const spinner = document.getElementById('place-search-spinner');
+
+      input.addEventListener('input', () => {
+        const query = input.value.trim();
+        clearTimeout(searchDebounce);
+
+        if (query.length < 2) {
+          dropdown.classList.add('hidden');
+          return;
+        }
+
+        const localMatches = LOCAL_CITIES_FALLBACK.filter(c =>
+          c.label.toLowerCase().includes(query.toLowerCase())
+        );
+        renderAutocompleteOptions(localMatches);
+
+        searchDebounce = setTimeout(async () => {
+          spinner.classList.remove('hidden');
+          try {
+            const url = `https://nominatim.openstreetmap.org/search?format=json&addressdetails=1&limit=6&accept-language=es&q=${encodeURIComponent(query)}`;
+            const res = await fetch(url);
+            if (res.ok) {
+              const data = await res.json();
+              const remoteMatches = data.map(item => {
+                const addr = item.address || {};
+                const city = addr.city || addr.town || addr.village || addr.municipality || item.name;
+                const country = addr.country || '';
+                const cleanLabel = [item.name !== city ? item.name : null, city, country].filter(Boolean).join(', ');
+                return {
+                  label: cleanLabel || item.display_name,
+                  shortName: item.name || city,
+                  regionHint: city || country,
+                  lat: parseFloat(item.lat),
+                  lng: parseFloat(item.lon)
+                };
+              });
+              if (remoteMatches.length > 0) {
+                renderAutocompleteOptions(remoteMatches);
+              }
+            }
+          } catch (_) {
+          } finally {
+            spinner.classList.add('hidden');
+          }
+        }, 320);
+      });
+
+      document.addEventListener('click', (e) => {
+        if (!input.contains(e.target) && !dropdown.contains(e.target)) {
+          dropdown.classList.add('hidden');
+        }
+      });
+    }
+
+    function renderAutocompleteOptions(items) {
+      const dropdown = document.getElementById('autocomplete-results');
+      if (!items.length) {
+        dropdown.classList.add('hidden');
+        return;
+      }
+
+      dropdown.innerHTML = items.map((item, idx) => `
+        <button type="button" data-idx="${idx}" class="w-full text-left px-4 py-2.5 hover:bg-sky-500/15 transition flex items-center justify-between gap-2">
+          <div class="flex items-center gap-2.5 min-w-0">
+            <i class="fa-solid fa-location-dot text-sky-400 text-xs shrink-0"></i>
+            <span class="text-xs sm:text-sm text-slate-100 truncate">${item.label}</span>
+          </div>
+          <span class="text-[10px] font-mono text-slate-400 shrink-0">${item.lat.toFixed(2)}, ${item.lng.toFixed(2)}</span>
+        </button>
+      `).join('');
+
+      dropdown.classList.remove('hidden');
+
+      dropdown.querySelectorAll('button').forEach((btn, i) => {
+        btn.addEventListener('click', () => {
+          const chosen = items[i];
+          document.getElementById('input-place-search').value = chosen.label;
+          document.getElementById('input-lat').value = chosen.lat.toFixed(6);
+          document.getElementById('input-lng').value = chosen.lng.toFixed(6);
+          if (!document.getElementById('input-parent-region').value && chosen.regionHint) {
+            document.getElementById('input-parent-region').value = chosen.regionHint;
+          }
+          dropdown.classList.add('hidden');
+        });
+      });
+    }
+
+    async function detectCurrentGPS(openFormAfter = false) {
+      if (!('geolocation' in navigator)) {
+        showToast('Tu navegador no soporta geolocalización GPS.', 'error');
+        return;
+      }
+
+      showToast('Obteniendo ubicación GPS actual...', 'info');
+      navigator.geolocation.getCurrentPosition(
+        async (pos) => {
+          const lat = pos.coords.latitude;
+          const lng = pos.coords.longitude;
+
+          if (openFormAfter) {
+            openAddTripModal();
+          }
+
+          document.getElementById('input-lat').value = lat.toFixed(6);
+          document.getElementById('input-lng').value = lng.toFixed(6);
+
+          try {
+            const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&accept-language=es&lat=${lat}&lon=${lng}`);
+            if (res.ok) {
+              const data = await res.json();
+              const addr = data.address || {};
+              const place = addr.attraction || addr.road || addr.suburb || addr.city || addr.town || addr.village || 'Ubicación GPS';
+              const city = addr.city || addr.town || addr.village || addr.country || '';
+              document.getElementById('input-place-search').value = city && place !== city ? `${place}, ${city}` : place;
+              if (city && !document.getElementById('input-parent-region').value) {
+                document.getElementById('input-parent-region').value = city;
+              }
+            }
+          } catch (_) {
+            document.getElementById('input-place-search').value = `Punto GPS (${lat.toFixed(3)}, ${lng.toFixed(3)})`;
+          }
+
+          showToast('Ubicación GPS fijada correctamente.', 'success');
+        },
+        () => {
+          showToast('No se pudo obtener el GPS. Revisa los permisos de ubicación.', 'warning');
+        },
+        { enableHighAccuracy: true, timeout: 10000 }
+      );
+    }
+
+    // --- 9. SUBIDA MÚLTIPLE DE FOTOS + EXTRACCIÓN EXIF GPS ---
+    async function processSelectedPhotos(fileList) {
+      const files = Array.from(fileList || []);
+      if (!files.length) return;
+
+      let foundGpsCoords = null;
+
+      for (const file of files) {
+        let gps = null;
+        try {
+          if (window.exifr) {
+            gps = await window.exifr.gps(file);
+          }
+        } catch (_) {}
+
+        if (gps && typeof gps.latitude === 'number' && typeof gps.longitude === 'number' && !foundGpsCoords) {
+          foundGpsCoords = { lat: gps.latitude, lng: gps.longitude };
+        }
+
+        const previewUrl = URL.createObjectURL(file);
+        AppState.tempPhotos.push({
+          id: `photo-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+          blob: file,
+          previewUrl,
+          lat: gps ? gps.latitude : null,
+          lng: gps ? gps.longitude : null,
+          name: file.name
+        });
+      }
+
+      if (foundGpsCoords) {
+        document.getElementById('exif-badge').classList.remove('hidden');
+        if (!document.getElementById('input-lat').value) {
+          document.getElementById('input-lat').value = foundGpsCoords.lat.toFixed(6);
+          document.getElementById('input-lng').value = foundGpsCoords.lng.toFixed(6);
+          showToast('Coordenadas GPS extraídas automáticamente de tus fotos.', 'success');
+        }
+      }
+
+      renderTempPhotosPreview();
+      showToast(`${files.length} ${files.length === 1 ? 'foto adjuntada' : 'fotos adjuntadas'}.`, 'success');
+    }
+
+    function renderTempPhotosPreview() {
+      const grid = document.getElementById('selected-photos-preview');
+      grid.innerHTML = AppState.tempPhotos.map((p, idx) => `
+        <div class="relative aspect-square rounded-xl overflow-hidden bg-space-900 border border-slate-700 group">
+          <img src="${p.previewUrl}" class="w-full h-full object-cover" />
+          ${p.lat ? `<span class="absolute bottom-1 left-1 px-1.5 py-0.5 rounded bg-emerald-500/90 text-[8px] font-bold text-white">GPS</span>` : ''}
+          <button type="button" data-remove-photo="${idx}" class="absolute top-1 right-1 w-6 h-6 rounded-full bg-black/80 text-white text-[10px] flex items-center justify-center hover:bg-rose-500">
+            <i class="fa-solid fa-xmark"></i>
+          </button>
+        </div>
+      `).join('');
+
+      grid.querySelectorAll('[data-remove-photo]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const i = parseInt(btn.dataset.removePhoto, 10);
+          URL.revokeObjectURL(AppState.tempPhotos[i].previewUrl);
+          AppState.tempPhotos.splice(i, 1);
+          renderTempPhotosPreview();
+        });
+      });
+    }
+
+    // --- 10. FORMULARIO AÑADIR VIAJE Y SELECCIÓN DE PERSONAS CON CARAS ---
+    function openAddTripModal() {
+      AppState.tempPhotos = [];
+      // Por defecto, marcar a las personas registradas (excepto el principal que siempre va)
+      AppState.selectedTripPeopleNames = AppState.people
+        .filter(p => !p.isPrimary)
+        .map(p => p.name);
+
+      document.getElementById('form-add-trip').reset();
+      document.getElementById('exif-badge').classList.add('hidden');
+      renderTripPeopleSelector();
+      renderTempPhotosPreview();
+
+      const today = new Date().toISOString().split('T')[0];
+      document.getElementById('input-date-start').value = today;
+      document.getElementById('input-date-end').value = today;
+
+      document.getElementById('modal-add-trip').classList.remove('hidden');
+    }
+
+    function renderTripPeopleSelector() {
+      const container = document.getElementById('trip-people-selector');
+      const primary = getPrimaryPerson();
+
+      // Mostrar el viajero principal fijo + todos los demás viajeros toggleables
+      const others = AppState.people.filter(p => !p.isPrimary);
+      // También incluir cualquier nombre añadido rápido que no esté en AppState.people
+      const extraNames = AppState.selectedTripPeopleNames.filter(
+        name => !AppState.people.some(p => p.name.toLowerCase() === name.toLowerCase())
+      );
+
+      let html = `
+        <div class="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-sky-500/20 border border-sky-400 text-xs font-semibold text-white">
+          ${renderAvatarBubbleHtml(primary.name, 'w-5 h-5 text-[9px]')}
+          <span>${primary.name} (Tú)</span>
+        </div>
+      `;
+
+      others.forEach(person => {
+        const isSelected = AppState.selectedTripPeopleNames.some(n => n.toLowerCase() === person.name.toLowerCase());
+        html += `
+          <button type="button" data-toggle-person="${person.name}" class="inline-flex items-center gap-2 px-3 py-1.5 rounded-full border text-xs font-medium transition ${
+            isSelected
+              ? 'bg-indigo-500/25 border-indigo-400 text-white shadow-sm'
+              : 'bg-space-900/80 border-slate-700 text-slate-400 hover:border-slate-500'
+          }">
+            ${renderAvatarBubbleHtml(person.name, 'w-5 h-5 text-[9px]')}
+            <span>${person.name}</span>
+            <i class="fa-solid ${isSelected ? 'fa-check text-emerald-400' : 'fa-plus text-slate-500'} text-[10px]"></i>
+          </button>
+        `;
+      });
+
+      extraNames.forEach(name => {
+        html += `
+          <button type="button" data-toggle-person="${name}" class="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-indigo-500/25 border border-indigo-400 text-xs font-medium text-white">
+            ${renderAvatarBubbleHtml(name, 'w-5 h-5 text-[9px]')}
+            <span>${name}</span>
+            <i class="fa-solid fa-xmark text-[10px] text-rose-300"></i>
+          </button>
+        `;
+      });
+
+      container.innerHTML = html;
+
+      container.querySelectorAll('[data-toggle-person]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const targetName = btn.dataset.togglePerson;
+          const idx = AppState.selectedTripPeopleNames.findIndex(n => n.toLowerCase() === targetName.toLowerCase());
+          if (idx >= 0) {
+            AppState.selectedTripPeopleNames.splice(idx, 1);
+          } else {
+            AppState.selectedTripPeopleNames.push(targetName);
+          }
+          renderTripPeopleSelector();
+        });
+      });
+    }
+
+    async function handleSaveTripSubmit(e) {
+      e.preventDefault();
+      const tripName = document.getElementById('input-trip-name').value.trim();
+      const parentRegion = document.getElementById('input-parent-region').value.trim();
+      const placeName = document.getElementById('input-place-search').value.trim();
+      const lat = parseFloat(document.getElementById('input-lat').value);
+      const lng = parseFloat(document.getElementById('input-lng').value);
+      const startDate = document.getElementById('input-date-start').value;
+      const endDate = document.getElementById('input-date-end').value;
+      const notes = document.getElementById('input-trip-notes').value.trim();
+
+      if (!tripName || !placeName || isNaN(lat) || isNaN(lng)) {
+        showToast('Completa el nombre del viaje, el lugar y las coordenadas.', 'warning');
+        return;
+      }
+
+      const placeId = `place-${Date.now()}`;
+      const newPlace = {
+        id: placeId,
+        tripName,
+        parentRegion: parentRegion || placeName.split(',')[0].trim(),
+        placeName,
+        wikiQuery: placeName.split(',')[0].trim(),
+        lat,
+        lng,
+        startDate,
+        endDate,
+        companions: [...AppState.selectedTripPeopleNames],
+        notes: notes || `Recuerdos de ${placeName}.`,
+        isSample: false
+      };
+
+      await dbPut('places', newPlace);
+
+      for (const photo of AppState.tempPhotos) {
+        await dbPut('photos', {
+          id: photo.id,
+          placeId,
+          blob: photo.blob,
+          name: photo.name,
+          lat: photo.lat || lat,
+          lng: photo.lng || lng,
+          createdAt: Date.now()
+        });
+      }
+
+      AppState.places = await dbGetAll('places');
+      AppState.activeBranchRegion = null;
+      updateBranchBanner();
+      refreshGlobeData();
+
+      document.getElementById('modal-add-trip').classList.add('hidden');
+      showToast(`¡"${placeName}" guardado con ${AppState.tempPhotos.length} fotos!`, 'success');
+
+      if (AppState.isStreetMapMode) {
+        streetMap.setView([lat, lng], 14);
+      } else {
+        setOrbitRotation(false);
+        worldGlobe.pointOfView({ lat, lng, altitude: 0.65 }, 1150);
+      }
+    }
+
+    // --- 11. GALERÍA 2D DEL LUGAR + ENRIQUECIMIENTO WIKIMEDIA / WIKIPEDIA ---
+    async function openPlaceGallery(placeId) {
+      const place = AppState.places.find(p => p.id === placeId);
+      if (!place) return;
+
+      AppState.currentGalleryPlaceId = placeId;
+      document.getElementById('gallery-title').textContent = place.placeName;
+      document.getElementById('gallery-subtitle').textContent =
+        `${place.tripName} • ${place.startDate || 'Sin fecha'} ${place.endDate && place.endDate !== place.startDate ? '→ ' + place.endDate : ''}`;
+
+      const regionBadge = document.getElementById('gallery-region-badge');
+      if (place.parentRegion) {
+        regionBadge.textContent = place.parentRegion;
+        regionBadge.classList.remove('hidden');
+      } else {
+        regionBadge.classList.add('hidden');
+      }
+
+      document.getElementById('gallery-notes').textContent = place.notes || 'Sin notas adicionales.';
+      document.getElementById('gallery-coords-text').textContent = `${place.lat.toFixed(4)}°, ${place.lng.toFixed(4)}°`;
+
+      // Participantes con sus caras reales
+      const partEl = document.getElementById('gallery-participants');
+      const primary = getPrimaryPerson();
+      const allPeople = [primary.name, ...(place.companions || []).filter(c => c.toLowerCase() !== primary.name.toLowerCase())];
+
+      partEl.innerHTML = allPeople.map((personName, i) => `
+        <span class="inline-flex items-center gap-1.5 pl-1 pr-2.5 py-1 rounded-full text-[11px] font-medium ${i === 0 ? 'bg-sky-500/20 text-sky-200 border border-sky-500/40' : 'bg-indigo-500/20 text-indigo-200 border border-indigo-500/40'}">
+          ${renderAvatarBubbleHtml(personName, 'w-5 h-5 text-[9px]')}
+          <span>${personName}</span>
+        </span>
+      `).join('');
+
+      // Paradas hermanas del mismo viaje
+      const sameTripStops = AppState.places.filter(p => p.tripName === place.tripName);
+      const stopsContainer = document.getElementById('gallery-trip-stops');
+      if (sameTripStops.length > 1) {
+        stopsContainer.innerHTML = `<span class="text-[11px] text-slate-400 mr-1">Paradas de este viaje:</span>` +
+          sameTripStops.map(s => `
+            <button type="button" data-jump-place="${s.id}" class="px-2.5 py-1 rounded-lg text-xs font-medium transition ${s.id === place.id ? 'bg-sky-500 text-white' : 'bg-slate-800 hover:bg-slate-700 text-slate-300'}">
+              ${s.placeName}
+            </button>
+          `).join('');
+        stopsContainer.querySelectorAll('[data-jump-place]').forEach(btn => {
+          btn.addEventListener('click', () => openPlaceGallery(btn.dataset.jumpPlace));
+        });
+      } else {
+        stopsContainer.innerHTML = `<span class="text-[11px] text-slate-500">Parada única registrada en este viaje.</span>`;
+      }
+
+      document.getElementById('modal-gallery').classList.remove('hidden');
+
+      setTimeout(() => {
+        if (!galleryMiniMap) {
+          galleryMiniMap = L.map('gallery-mini-map', { zoomControl: false, attributionControl: false });
+          L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', { maxZoom: 18 }).addTo(galleryMiniMap);
+        }
+        galleryMiniMap.invalidateSize();
+        galleryMiniMap.setView([place.lat, place.lng], 15);
+        galleryMiniMap.eachLayer(layer => {
+          if (layer instanceof L.Marker) galleryMiniMap.removeLayer(layer);
+        });
+        L.marker([place.lat, place.lng]).addTo(galleryMiniMap);
+      }, 100);
+
+      await renderGalleryUserPhotos(placeId);
+      fetchPublicMonumentPhotos(place);
+    }
+
+    async function renderGalleryUserPhotos(placeId) {
+      const photos = await dbGetPhotosByPlace(placeId);
+      const grid = document.getElementById('gallery-user-photos-grid');
+      document.getElementById('gallery-user-photos-count').textContent = `(${photos.length})`;
+
+      if (!photos.length) {
+        grid.innerHTML = `
+          <div class="col-span-full rounded-2xl border border-dashed border-slate-800 p-6 text-center text-slate-400 text-xs">
+            <i class="fa-regular fa-image text-2xl text-slate-600 mb-2 block"></i>
+            Aún no has subido fotos propias a este destino. Pulsa <strong>"Añadir fotos"</strong> arriba para elegir varias de tu galería.
+          </div>
+        `;
+        return;
+      }
+
+      grid.innerHTML = '';
+      photos.forEach(photo => {
+        const url = URL.createObjectURL(photo.blob);
+        const card = document.createElement('div');
+        card.className = 'relative aspect-square rounded-2xl overflow-hidden bg-space-900 border border-slate-800 group cursor-pointer';
+        card.innerHTML = `
+          <img src="${url}" alt="${photo.name}" class="w-full h-full object-cover group-hover:scale-105 transition duration-300" />
+          <div class="absolute inset-0 bg-gradient-to-t from-black/75 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition flex items-end justify-between p-2.5">
+            <span class="text-[10px] text-slate-200 truncate">${photo.name}</span>
+            <button type="button" class="delete-photo-btn w-7 h-7 rounded-full bg-rose-500/85 hover:bg-rose-500 text-white text-[10px] flex items-center justify-center">
+              <i class="fa-solid fa-trash"></i>
+            </button>
+          </div>
+        `;
+
+        card.addEventListener('click', (e) => {
+          if (e.target.closest('.delete-photo-btn')) return;
+          openLightbox(url, `${photo.name} • Foto propia`);
+        });
+
+        card.querySelector('.delete-photo-btn').addEventListener('click', async (e) => {
+          e.stopPropagation();
+          await dbDelete('photos', photo.id);
+          await renderGalleryUserPhotos(placeId);
+          showToast('Foto eliminada del álbum local.', 'info');
+        });
+
+        grid.appendChild(card);
+      });
+    }
+
+    async function fetchPublicMonumentPhotos(place) {
+      const badge = document.getElementById('wiki-status-badge');
+      const summaryBox = document.getElementById('gallery-wiki-summary');
+      const grid = document.getElementById('gallery-wiki-photos-grid');
+
+      badge.textContent = 'Conectando...';
+      badge.className = 'text-[11px] px-2.5 py-1 rounded-full bg-sky-500/15 text-sky-300';
+      summaryBox.classList.add('hidden');
+      grid.innerHTML = `
+        <div class="col-span-full py-6 text-center text-xs text-slate-500">
+          <i class="fa-solid fa-circle-notch fa-spin mr-1.5"></i> Cargando postales destacadas del lugar...
+        </div>
+      `;
+
+      const query = place.wikiQuery || place.placeName.split(',')[0].trim();
+
+      try {
+        const wikiRes = await fetch(`https://es.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(query)}`);
+        if (wikiRes.ok) {
+          const wikiData = await wikiRes.json();
+          if (wikiData.extract) {
+            summaryBox.textContent = wikiData.extract;
+            summaryBox.classList.remove('hidden');
+          }
+        }
+
+        const commonsUrl = `https://commons.wikimedia.org/w/api.php?action=query&generator=search&gsrsearch=${encodeURIComponent(query)}&gsrnamespace=6&gsrlimit=8&prop=imageinfo&iiprop=url&iiurlwidth=640&format=json&origin=*`;
+        const commonsRes = await fetch(commonsUrl);
+        if (!commonsRes.ok) throw new Error('Sin respuesta de Wikimedia');
+
+        const commonsData = await commonsRes.json();
+        const pages = commonsData.query ? Object.values(commonsData.query.pages) : [];
+        const validImages = pages
+          .map(p => p.imageinfo && p.imageinfo[0])
+          .filter(info => info && info.thumburl && !info.thumburl.endsWith('.svg') && !info.thumburl.endsWith('.pdf'))
+          .slice(0, 4);
+
+        if (validImages.length > 0) {
+          badge.textContent = 'Wi-Fi • Wikimedia Commons';
+          badge.className = 'text-[11px] px-2.5 py-1 rounded-full bg-emerald-500/15 text-emerald-300 border border-emerald-500/30';
+
+          grid.innerHTML = validImages.map(img => `
+            <div class="relative aspect-video sm:aspect-square rounded-2xl overflow-hidden bg-space-900 border border-slate-800 group cursor-pointer" data-full-url="${img.url}">
+              <img src="${img.thumburl}" loading="lazy" alt="${query}" class="w-full h-full object-cover group-hover:scale-105 transition duration-300" />
+              <div class="absolute bottom-2 right-2 px-2 py-0.5 rounded-md bg-black/65 text-[9px] text-slate-300">
+                Postal Pública
+              </div>
+            </div>
+          `).join('');
+
+          grid.querySelectorAll('[data-full-url]').forEach(el => {
+            el.addEventListener('click', () => {
+              openLightbox(el.dataset.fullUrl, `${place.placeName} — Imagen destacada de Wikimedia Commons`);
+            });
+          });
+        } else {
+          badge.textContent = 'Sin postales extra';
+          grid.innerHTML = `<div class="col-span-full text-xs text-slate-500">No se encontraron imágenes públicas adicionales para este punto.</div>`;
+        }
+      } catch (_) {
+        badge.textContent = 'Modo Offline';
+        badge.className = 'text-[11px] px-2.5 py-1 rounded-full bg-slate-800 text-slate-400';
+        grid.innerHTML = `<div class="col-span-full text-xs text-slate-500">Conéctate a Wi-Fi o datos para ver postales públicas de este monumento.</div>`;
+      }
+    }
+
+    function openLightbox(src, caption) {
+      document.getElementById('lightbox-img').src = src;
+      document.getElementById('lightbox-caption').textContent = caption || '';
+      document.getElementById('modal-lightbox').classList.remove('hidden');
+    }
+
+    // --- 12. LISTA DE VIAJES CON FILTRO POR VIAJERO ---
+    function openTripsListModal() {
+      renderTripsFilterBar();
+      renderFilteredTripsList();
+      document.getElementById('modal-trips-list').classList.remove('hidden');
+    }
+
+    function renderTripsFilterBar() {
+      const bar = document.getElementById('trips-filter-bar');
+      const allButton = `
+        <button type="button" data-filter-person="ALL" class="px-3 py-1.5 rounded-full text-xs font-medium shrink-0 transition ${
+          AppState.tripsFilterPerson === 'ALL' ? 'bg-sky-500 text-white' : 'bg-space-900 text-slate-300 border border-slate-700'
+        }">
+          Todos (${AppState.places.length})
+        </button>
+      `;
+
+      const personButtons = AppState.people.map(person => {
+        const active = AppState.tripsFilterPerson.toLowerCase() === person.name.toLowerCase();
+        return `
+          <button type="button" data-filter-person="${person.name}" class="inline-flex items-center gap-1.5 pl-1.5 pr-3 py-1 rounded-full text-xs font-medium shrink-0 transition ${
+            active ? 'bg-sky-500 text-white' : 'bg-space-900 text-slate-300 border border-slate-700'
+          }">
+            ${renderAvatarBubbleHtml(person.name, 'w-5 h-5 text-[9px]')}
+            <span>${person.name}</span>
+          </button>
+        `;
+      }).join('');
+
+      bar.innerHTML = allButton + personButtons;
+
+      bar.querySelectorAll('[data-filter-person]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          AppState.tripsFilterPerson = btn.dataset.filterPerson;
+          renderTripsFilterBar();
+          renderFilteredTripsList();
+        });
+      });
+    }
+
+    function renderFilteredTripsList() {
+      const container = document.getElementById('trips-list-container');
+      const primary = getPrimaryPerson();
+
+      const filtered = AppState.places.filter(p => {
+        if (AppState.tripsFilterPerson === 'ALL') return true;
+        if (AppState.tripsFilterPerson.toLowerCase() === primary.name.toLowerCase()) return true;
+        return (p.companions || []).some(c => c.toLowerCase() === AppState.tripsFilterPerson.toLowerCase());
+      });
+
+      if (!filtered.length) {
+        container.innerHTML = `
+          <div class="text-center py-10 text-slate-400 text-sm">
+            No hay viajes registrados para este filtro. ¡Pulsa <strong>Añadir Viaje</strong> para crear uno!
+          </div>
+        `;
+        return;
+      }
+
+      container.innerHTML = filtered.map(p => {
+        const participants = [primary.name, ...(p.companions || []).filter(c => c.toLowerCase() !== primary.name.toLowerCase())];
+        const avatarsHtml = participants.map((name, idx) =>
+          renderAvatarBubbleHtml(name, 'w-6 h-6 text-[10px]', idx > 0 ? '-ml-1.5' : '')
+        ).join('');
+
+        return `
+          <div class="p-3.5 rounded-2xl bg-space-900/90 border border-slate-800 hover:border-sky-500/50 transition flex items-center justify-between gap-3">
+            <div class="min-w-0 flex-1 cursor-pointer" data-fly-place="${p.id}">
+              <div class="flex items-center gap-2">
+                <span class="text-xs font-bold text-sky-400">${p.tripName}</span>
+                ${p.isSample ? `<span class="text-[9px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-400">Ejemplo</span>` : ''}
+              </div>
+              <h4 class="text-sm font-semibold text-white truncate mt-0.5">${p.placeName}</h4>
+              <div class="flex items-center gap-2 mt-1.5">
+                <div class="flex items-center">${avatarsHtml}</div>
+                <span class="text-[11px] text-slate-400 truncate">${p.startDate || ''}</span>
+              </div>
+            </div>
+            <div class="flex items-center gap-2 shrink-0">
+              <button type="button" data-open-album="${p.id}" class="px-3.5 py-2 rounded-xl bg-sky-500/15 hover:bg-sky-500/25 text-sky-300 text-xs font-medium border border-sky-500/30 transition">
+                Álbum
+              </button>
+            </div>
+          </div>
+        `;
+      }).join('');
+
+      container.querySelectorAll('[data-fly-place]').forEach(el => {
+        el.addEventListener('click', () => {
+          const place = AppState.places.find(x => x.id === el.dataset.flyPlace);
+          document.getElementById('modal-trips-list').classList.add('hidden');
+          if (place) {
+            AppState.activeBranchRegion = null;
+            updateBranchBanner();
+            refreshGlobeData();
+            if (AppState.isStreetMapMode) {
+              streetMap.setView([place.lat, place.lng], 15);
+            } else {
+              setOrbitRotation(false);
+              worldGlobe.pointOfView({ lat: place.lat, lng: place.lng, altitude: 0.48 }, 1100);
+            }
+          }
+        });
+      });
+
+      container.querySelectorAll('[data-open-album]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          document.getElementById('modal-trips-list').classList.add('hidden');
+          openPlaceGallery(btn.dataset.openAlbum);
+        });
+      });
+    }
+
+    // --- 13. GESTIÓN DE PERSONAS Y EDITOR DE CARAS (RECORTE CIRCULAR INTERACTIVO) ---
+    const CropEditor = {
+      editingPersonId: null,
+      imgObj: null,
+      zoom: 1,
+      offsetX: 0,
+      offsetY: 0,
+      isDragging: false,
+      lastPointerX: 0,
+      lastPointerY: 0
+    };
+
+    function openPeopleModal(targetPersonId = null) {
+      renderPeopleCardsGrid();
+      const toEdit = targetPersonId
+        ? AppState.people.find(p => p.id === targetPersonId)
+        : getPrimaryPerson();
+
+      if (toEdit) {
+        loadPersonIntoCropEditor(toEdit);
+      } else {
+        resetCropEditorForNewPerson();
+      }
+      document.getElementById('modal-people').classList.remove('hidden');
+    }
+
+    function renderPeopleCardsGrid() {
+      const grid = document.getElementById('people-cards-grid');
+      grid.innerHTML = AppState.people.map(person => {
+        const isEditing = CropEditor.editingPersonId === person.id;
+        return `
+          <button type="button" data-select-person="${person.id}" class="p-2.5 rounded-2xl border text-left flex items-center gap-2.5 transition ${
+            isEditing
+              ? 'bg-sky-500/15 border-sky-400 shadow-md'
+              : 'bg-space-900/90 border-slate-800 hover:border-slate-600'
+          }">
+            ${renderAvatarBubbleHtml(person.name, 'w-10 h-10 text-xs')}
+            <div class="min-w-0">
+              <div class="text-xs font-bold text-white truncate">${person.name}</div>
+              <div class="text-[10px] ${person.faceDataUrl ? 'text-emerald-400' : 'text-slate-400'}">
+                ${person.isPrimary ? 'Principal • ' : ''}${person.faceDataUrl ? 'Cara lista' : 'Sin foto aún'}
+              </div>
+            </div>
+          </button>
+        `;
+      }).join('');
+
+      grid.querySelectorAll('[data-select-person]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const p = AppState.people.find(x => x.id === btn.dataset.selectPerson);
+          if (p) {
+            loadPersonIntoCropEditor(p);
+            renderPeopleCardsGrid();
+          }
+        });
+      });
+    }
+
+    function loadPersonIntoCropEditor(person) {
+      CropEditor.editingPersonId = person.id;
+      CropEditor.zoom = 1;
+      CropEditor.offsetX = 0;
+      CropEditor.offsetY = 0;
+
+      document.getElementById('person-editor-title').textContent = `Editando a ${person.name}`;
+      document.getElementById('input-person-name').value = person.name;
+      document.getElementById('crop-zoom-slider').value = 1;
+      document.getElementById('crop-x-slider').value = 0;
+      document.getElementById('crop-y-slider').value = 0;
+      document.getElementById('crop-zoom-val').textContent = '1.0x';
+
+      const primaryBadge = document.getElementById('person-primary-badge');
+      const deleteBtn = document.getElementById('btn-delete-person');
+      if (person.isPrimary) {
+        primaryBadge.classList.remove('hidden');
+        deleteBtn.classList.add('hidden');
+      } else {
+        primaryBadge.classList.add('hidden');
+        deleteBtn.classList.remove('hidden');
+      }
+
+      if (person.faceDataUrl) {
+        const img = new Image();
+        img.onload = () => {
+          CropEditor.imgObj = img;
+          enableFaceSliders(true);
+          drawCropCanvas();
+        };
+        img.src = person.faceDataUrl;
+      } else {
+        CropEditor.imgObj = null;
+        enableFaceSliders(false);
+        drawPlaceholderOnCropCanvas(person.name);
+      }
+    }
+
+    function resetCropEditorForNewPerson() {
+      CropEditor.editingPersonId = null;
+      CropEditor.imgObj = null;
+      CropEditor.zoom = 1;
+      CropEditor.offsetX = 0;
+      CropEditor.offsetY = 0;
+
+      document.getElementById('person-editor-title').textContent = 'Añadir Nueva Persona';
+      document.getElementById('input-person-name').value = '';
+      document.getElementById('person-primary-badge').classList.add('hidden');
+      document.getElementById('btn-delete-person').classList.add('hidden');
+      enableFaceSliders(false);
+      drawPlaceholderOnCropCanvas('?');
+      renderPeopleCardsGrid();
+    }
+
+    function enableFaceSliders(enabled) {
+      const box = document.getElementById('face-adjust-controls');
+      if (enabled) {
+        box.classList.remove('opacity-50', 'pointer-events-none');
+      } else {
+        box.classList.add('opacity-50', 'pointer-events-none');
+      }
+    }
+
+    function drawPlaceholderOnCropCanvas(name) {
+      const canvas = document.getElementById('avatar-crop-canvas');
+      const ctx = canvas.getContext('2d');
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      const grad = ctx.createLinearGradient(0, 0, canvas.width, canvas.height);
+      grad.addColorStop(0, '#0ea5e9');
+      grad.addColorStop(1, '#4f46e5');
+      ctx.fillStyle = grad;
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      ctx.fillStyle = '#ffffff';
+      ctx.font = 'bold 76px Inter, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText((name || '?').trim().slice(0, 2).toUpperCase(), canvas.width / 2, canvas.height / 2);
+    }
+
+    function drawCropCanvas() {
+      const canvas = document.getElementById('avatar-crop-canvas');
+      const ctx = canvas.getContext('2d');
+      const img = CropEditor.imgObj;
+      if (!img) return;
+
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.fillStyle = '#040711';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      const baseScale = Math.max(canvas.width / img.width, canvas.height / img.height);
+      const scale = baseScale * CropEditor.zoom;
+      const drawW = img.width * scale;
+      const drawH = img.height * scale;
+      const dx = (canvas.width - drawW) / 2 + CropEditor.offsetX;
+      const dy = (canvas.height - drawH) / 2 + CropEditor.offsetY;
+
+      ctx.drawImage(img, dx, dy, drawW, drawH);
+    }
+
+    function setupCropCanvasInteractions() {
+      const canvas = document.getElementById('avatar-crop-canvas');
+      const fileInput = document.getElementById('input-person-face-file');
+      const zoomSlider = document.getElementById('crop-zoom-slider');
+      const xSlider = document.getElementById('crop-x-slider');
+      const ySlider = document.getElementById('crop-y-slider');
+
+      fileInput.addEventListener('change', (e) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = () => {
+          const img = new Image();
+          img.onload = () => {
+            CropEditor.imgObj = img;
+            CropEditor.zoom = 1.15;
+            CropEditor.offsetX = 0;
+            CropEditor.offsetY = 0;
+            zoomSlider.value = 1.15;
+            xSlider.value = 0;
+            ySlider.value = 0;
+            document.getElementById('crop-zoom-val').textContent = '1.15x';
+            enableFaceSliders(true);
+            drawCropCanvas();
+          };
+          img.src = reader.result;
+        };
+        reader.readAsDataURL(file);
+      });
+
+      zoomSlider.addEventListener('input', () => {
+        CropEditor.zoom = parseFloat(zoomSlider.value);
+        document.getElementById('crop-zoom-val').textContent = `${CropEditor.zoom.toFixed(2)}x`;
+        drawCropCanvas();
+      });
+
+      xSlider.addEventListener('input', () => {
+        CropEditor.offsetX = parseFloat(xSlider.value);
+        drawCropCanvas();
+      });
+
+      ySlider.addEventListener('input', () => {
+        CropEditor.offsetY = parseFloat(ySlider.value);
+        drawCropCanvas();
+      });
+
+      // Permitir arrastrar directamente la foto dentro del círculo con el dedo o ratón
+      const startDrag = (clientX, clientY) => {
+        if (!CropEditor.imgObj) return;
+        CropEditor.isDragging = true;
+        CropEditor.lastPointerX = clientX;
+        CropEditor.lastPointerY = clientY;
+      };
+
+      const moveDrag = (clientX, clientY) => {
+        if (!CropEditor.isDragging || !CropEditor.imgObj) return;
+        const dx = (clientX - CropEditor.lastPointerX) * 1.4;
+        const dy = (clientY - CropEditor.lastPointerY) * 1.4;
+        CropEditor.lastPointerX = clientX;
+        CropEditor.lastPointerY = clientY;
+        CropEditor.offsetX = Math.max(-140, Math.min(140, CropEditor.offsetX + dx));
+        CropEditor.offsetY = Math.max(-140, Math.min(140, CropEditor.offsetY + dy));
+        xSlider.value = Math.round(CropEditor.offsetX);
+        ySlider.value = Math.round(CropEditor.offsetY);
+        drawCropCanvas();
+      };
+
+      const endDrag = () => { CropEditor.isDragging = false; };
+
+      canvas.addEventListener('mousedown', e => startDrag(e.clientX, e.clientY));
+      window.addEventListener('mousemove', e => moveDrag(e.clientX, e.clientY));
+      window.addEventListener('mouseup', endDrag);
+
+      canvas.addEventListener('touchstart', e => {
+        if (e.touches[0]) startDrag(e.touches[0].clientX, e.touches[0].clientY);
+      }, { passive: true });
+      canvas.addEventListener('touchmove', e => {
+        if (e.touches[0]) moveDrag(e.touches[0].clientX, e.touches[0].clientY);
+      }, { passive: true });
+      canvas.addEventListener('touchend', endDrag);
+    }
+
+    async function saveCurrentPersonFromEditor() {
+      const name = document.getElementById('input-person-name').value.trim();
+      if (!name) {
+        showToast('Escribe el nombre del viajero.', 'warning');
+        return;
+      }
+
+      const canvas = document.getElementById('avatar-crop-canvas');
+      const faceDataUrl = CropEditor.imgObj ? canvas.toDataURL('image/jpeg', 0.88) : null;
+
+      if (CropEditor.editingPersonId) {
+        const existing = AppState.people.find(p => p.id === CropEditor.editingPersonId);
+        if (existing) {
+          existing.name = name;
+          if (faceDataUrl) existing.faceDataUrl = faceDataUrl;
+          await dbPut('people', existing);
+        }
+      } else {
+        const newPerson = {
+          id: `person-${Date.now()}`,
+          name,
+          faceDataUrl,
+          color: AVATAR_COLORS[AppState.people.length % AVATAR_COLORS.length],
+          isPrimary: false
+        };
+        await dbPut('people', newPerson);
+        CropEditor.editingPersonId = newPerson.id;
+      }
+
+      AppState.people = await dbGetAll('people');
+      updateHeaderAvatarUI();
+      renderPeopleCardsGrid();
+      refreshGlobeData();
+
+      // Si el modal de añadir viaje estaba abierto, actualizar también sus burbujas
+      if (!document.getElementById('modal-add-trip').classList.contains('hidden')) {
+        if (!AppState.selectedTripPeopleNames.some(n => n.toLowerCase() === name.toLowerCase())) {
+          AppState.selectedTripPeopleNames.push(name);
+        }
+        renderTripPeopleSelector();
+      }
+
+      showToast(`Avatar de ${name} guardado en el globo.`, 'success');
+    }
+
+    function updateHeaderAvatarUI() {
+      const primary = getPrimaryPerson();
+      const display = document.getElementById('user-avatar-display');
+      if (primary.faceDataUrl) {
+        display.innerHTML = `<img src="${primary.faceDataUrl}" alt="${primary.name}" class="w-full h-full object-cover" />`;
+      } else {
+        display.textContent = primary.name.slice(0, 2).toUpperCase();
+      }
+    }
+
+    // --- 14. EVENT LISTENERS E INICIALIZACIÓN ---
+    window.addEventListener('DOMContentLoaded', async () => {
+      await initDB();
+      await seedInitialDataIfNeeded();
+
+      initGlobe();
+      updateHeaderAvatarUI();
+      refreshGlobeData();
+      setupPlaceAutocomplete();
+      setupCropCanvasInteractions();
+
+      // Botones principales de navegación
+      document.getElementById('btn-open-add').addEventListener('click', openAddTripModal);
+      document.getElementById('btn-open-trips').addEventListener('click', openTripsListModal);
+      document.getElementById('btn-open-people').addEventListener('click', () => openPeopleModal());
+      document.getElementById('btn-profile-edit').addEventListener('click', () => openPeopleModal(getPrimaryPerson().id));
+      document.getElementById('btn-quick-manage-people').addEventListener('click', () => openPeopleModal());
+      document.getElementById('btn-quick-gps').addEventListener('click', () => detectCurrentGPS(true));
+      document.getElementById('btn-detect-gps-form').addEventListener('click', () => detectCurrentGPS(false));
+
+      // Gestión de Personas / Avatares
+      document.getElementById('btn-new-person-reset').addEventListener('click', resetCropEditorForNewPerson);
+      document.getElementById('btn-save-person').addEventListener('click', saveCurrentPersonFromEditor);
+      document.getElementById('btn-delete-person').addEventListener('click', async () => {
+        if (!CropEditor.editingPersonId) return;
+        await dbDelete('people', CropEditor.editingPersonId);
+        AppState.people = await dbGetAll('people');
+        resetCropEditorForNewPerson();
+        refreshGlobeData();
+        showToast('Viajero eliminado.', 'info');
+      });
+
+      // Volver a vista global del globo
+      document.getElementById('btn-reset-view').addEventListener('click', () => {
+        AppState.activeBranchRegion = null;
+        updateBranchBanner();
+        refreshGlobeData();
+        if (AppState.isStreetMapMode) {
+          switchToGlobeMode();
+        }
+        worldGlobe.pointOfView({ lat: 38, lng: 3, altitude: 2.1 }, 1000);
+        scheduleOrbitResume();
+      });
+
+      // Alternar manualmente entre Globo 3D y Mapa Satélite HD
+      document.getElementById('btn-toggle-map-mode').addEventListener('click', () => {
+        if (AppState.isStreetMapMode) {
+          switchToGlobeMode();
+        } else {
+          const pov = worldGlobe.pointOfView();
+          switchToStreetMap(pov.lat, pov.lng, 13);
+        }
+      });
+
+      // Cerrar rama activa
+      document.getElementById('btn-close-branch').addEventListener('click', () => {
+        AppState.activeBranchRegion = null;
+        updateBranchBanner();
+        refreshGlobeData();
+        const pov = worldGlobe.pointOfView();
+        worldGlobe.pointOfView({ lat: pov.lat, lng: pov.lng, altitude: 1.75 }, 900);
+        scheduleOrbitResume();
+      });
+
+      // Añadir acompañante rápido en el formulario de viaje
+      document.getElementById('btn-add-companion').addEventListener('click', () => {
+        const input = document.getElementById('input-companion-name');
+        const val = input.value.trim();
+        if (val) {
+          if (!AppState.selectedTripPeopleNames.some(n => n.toLowerCase() === val.toLowerCase())) {
+            AppState.selectedTripPeopleNames.push(val);
+          }
+          input.value = '';
+          renderTripPeopleSelector();
+        }
+      });
+
+      // Selección múltiple de fotos en el formulario
+      document.getElementById('input-photos-multiple').addEventListener('change', (e) => {
+        processSelectedPhotos(e.target.files);
+      });
+
+      // Guardar viaje
+      document.getElementById('form-add-trip').addEventListener('submit', handleSaveTripSubmit);
+
+      // Añadir más fotos dentro de la galería de un lugar ya creado
+      document.getElementById('input-add-more-photos').addEventListener('change', async (e) => {
+        const files = Array.from(e.target.files || []);
+        if (!files.length || !AppState.currentGalleryPlaceId) return;
+        const place = AppState.places.find(p => p.id === AppState.currentGalleryPlaceId);
+
+        for (const file of files) {
+          await dbPut('photos', {
+            id: `photo-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+            placeId: AppState.currentGalleryPlaceId,
+            blob: file,
+            name: file.name,
+            lat: place ? place.lat : 0,
+            lng: place ? place.lng : 0,
+            createdAt: Date.now()
+          });
+        }
+        e.target.value = '';
+        await renderGalleryUserPhotos(AppState.currentGalleryPlaceId);
+        showToast(`${files.length} fotos guardadas en este álbum.`, 'success');
+      });
+
+      // Ver calle desde la galería
+      document.getElementById('btn-gallery-street-view').addEventListener('click', () => {
+        const place = AppState.places.find(p => p.id === AppState.currentGalleryPlaceId);
+        if (!place) return;
+        document.getElementById('modal-gallery').classList.add('hidden');
+        switchToStreetMap(place.lat, place.lng, 17);
+      });
+
+      // Eliminar lugar
+      document.getElementById('btn-delete-place').addEventListener('click', async () => {
+        if (!AppState.currentGalleryPlaceId) return;
+        const idToDelete = AppState.currentGalleryPlaceId;
+        const photos = await dbGetPhotosByPlace(idToDelete);
+        for (const ph of photos) {
+          await dbDelete('photos', ph.id);
+        }
+        await dbDelete('places', idToDelete);
+        AppState.places = await dbGetAll('places');
+        AppState.activeBranchRegion = null;
+        updateBranchBanner();
+        refreshGlobeData();
+        document.getElementById('modal-gallery').classList.add('hidden');
+        showToast('Lugar eliminado de tu bitácora.', 'info');
+      });
+
+      // Borrar datos de ejemplo
+      document.getElementById('btn-clear-demo').addEventListener('click', async () => {
+        const samples = AppState.places.filter(p => p.isSample);
+        for (const s of samples) {
+          await dbDelete('places', s.id);
+        }
+        AppState.places = await dbGetAll('places');
+        AppState.activeBranchRegion = null;
+        updateBranchBanner();
+        refreshGlobeData();
+        renderTripsFilterBar();
+        renderFilteredTripsList();
+        showToast('Viajes de ejemplo eliminados.', 'info');
+      });
+
+      // Cierre genérico de modales
+      document.querySelectorAll('[data-close-modal]').forEach(btn => {
+        btn.addEventListener('click', () => {
+          document.getElementById(btn.dataset.closeModal).classList.add('hidden');
+        });
+      });
+    });
+  </script>
+</body>
+</html>
